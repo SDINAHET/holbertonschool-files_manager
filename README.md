@@ -348,3 +348,83 @@ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_ma
 root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npx eslint utils/db.mjs
 root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
 ```
+
+# Task2
+
+```bash
+
+```
+
+```bash
+
+```
+
+# Task3
+
+```bash
+
+```
+
+```bash
+
+```
+
+# Task4
+
+```bash
+
+```
+
+```bash
+
+```
+
+# Task5
+
+```bash
+
+```
+
+```bash
+
+```
+
+# Task6
+
+```bash
+
+```
+
+```bash
+
+```
+
+# Task7
+
+```bash
+
+```
+
+```bash
+
+```
+
+# Task8
+
+```bash
+
+```
+
+```bash
+
+```
+
+# Task9
+
+```bash
+
+```
+
+```bash
+
+```
