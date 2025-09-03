@@ -1,6 +1,6 @@
 # holbertonschool-files_manager
 
-# Task 1
+# Task 0
 ```bash
 root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run dev main.js
 
@@ -38,7 +38,7 @@ Some issues need review, and may require choosing
 a different dependency.
 
 Run `npm audit` for details.
-root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#  npm run dev main.js
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#  npm run dev 0_main.js
 
 > files_manager@1.0.0 dev
 > nodemon --exec babel-node --presets @babel/preset-env main.js
@@ -55,7 +55,7 @@ null
 root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#  npm run dev main.js
 
 > files_manager@1.0.0 dev
-> nodemon --exec babel-node --presets @babel/preset-env main.js
+> nodemon --exec babel-node --presets @babel/preset-env 0_main.js
 
 [nodemon] 2.0.22
 [nodemon] to restart at any time, enter `rs`
@@ -135,10 +135,10 @@ export { RedisClient };
 export default redisClient;
 
 ```
-
+![alt text](<image (58).png>)
 
 ```bash
-root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run dev main.js
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run dev 0_main.js
 
 > files_manager@1.0.0 dev
 > nodemon --exec babel-node --presets @babel/preset-env main.js
@@ -152,4 +152,74 @@ true
 null
 12
 null
+```
+
+# Task1
+
+db.mjs
+```js
+// utils/db.mjs
+import mongodb from 'mongodb';
+const { MongoClient } = mongodb;
+
+class DBClient {
+  constructor() {
+    const host = process.env.DB_HOST || 'localhost';
+    const port = process.env.DB_PORT || 27017;
+    const database = process.env.DB_DATABASE || 'files_manager';
+
+    this.dbName = database;
+    this.connected = false;
+    this.db = null;
+
+    const url = `mongodb://${host}:${port}`;
+    this.client = new MongoClient(url, { useUnifiedTopology: true });
+
+    this.client.connect()
+      .then(() => {
+        this.db = this.client.db(this.dbName);
+        this.connected = true;
+      })
+      .catch((err) => {
+        console.error('MongoDB client error:', err && err.message ? err.message : err);
+        this.connected = false;
+      });
+  }
+
+  isAlive() {
+    return this.connected === true;
+  }
+
+  async nbUsers() {
+    if (!this.db) return 0;
+    return this.db.collection('users').countDocuments();
+  }
+
+  async nbFiles() {
+    if (!this.db) return 0;
+    return this.db.collection('files').countDocuments();
+  }
+}
+
+const dbClient = new DBClient();
+
+export { DBClient };
+export default dbClient;
+```
+
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run dev 1_main.js
+
+> files_manager@1.0.0 dev
+> nodemon --exec babel-node --presets @babel/preset-env 1_main.js
+
+[nodemon] 2.0.22
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `babel-node --presets @babel/preset-env 1_main.js`
+false
+true
+0
+0
 ```
