@@ -904,12 +904,223 @@ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_ma
 
 # Task5
 
+routes/index.js
 ```bash
+// routes/index.js
+import { Router } from 'express';
+import AppController from '../controllers/AppController';
+import UsersController from '../controllers/UsersController';
+import AuthController from '../controllers/AuthController';
+import FilesController from '../controllers/FilesController'; // <-- add
+
+const router = Router();
+
+router.get('/status', AppController.getStatus);
+router.get('/stats', AppController.getStats);
+
+router.post('/users', UsersController.postNew);
+
+router.get('/connect', AuthController.getConnect);
+router.get('/disconnect', AuthController.getDisconnect);
+router.get('/users/me', UsersController.getMe);
+
+router.post('/files', FilesController.postUpload); // <-- add
+
+export default router;
+```
+
+controllers/FilesController.js
+```bash
+// controllers/FilesController.js
+import { promises as fs } from 'fs';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import mongodb from 'mongodb';
+import redisClient from '../utils/redis';
+import dbClient from '../utils/db';
+
+const { ObjectId } = mongodb;
+const VALID_TYPES = new Set(['folder', 'file', 'image']);
+
+class FilesController {
+  static async postUpload(req, res) {
+    try {
+      // 1) Auth via X-Token -> userId en Redis
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+      const userIdStr = await redisClient.get(`auth_${token}`);
+      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+      let userId;
+      try {
+        userId = new ObjectId(userIdStr);
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // 2) Inputs
+      const {
+        name,
+        type,
+        parentId = 0,
+        isPublic = false,
+        data,
+      } = req.body || {};
+
+      if (!name) return res.status(400).json({ error: 'Missing name' });
+      if (!type || !VALID_TYPES.has(type)) {
+        return res.status(400).json({ error: 'Missing type' });
+      }
+      if (type !== 'folder' && !data) {
+        return res.status(400).json({ error: 'Missing data' });
+      }
+
+      // 3) parentId validations
+      let parentRef = 0;
+      if (parentId && parentId !== 0 && parentId !== '0') {
+        let parentObjId;
+        try {
+          parentObjId = new ObjectId(parentId);
+        } catch (e) {
+          return res.status(400).json({ error: 'Parent not found' });
+        }
+
+        const parentDoc = await dbClient.db.collection('files').findOne({ _id: parentObjId });
+        if (!parentDoc) return res.status(400).json({ error: 'Parent not found' });
+        if (parentDoc.type !== 'folder') {
+          return res.status(400).json({ error: 'Parent is not a folder' });
+        }
+        parentRef = parentObjId;
+      }
+
+      // 4) Si dossier -> insert direct
+      if (type === 'folder') {
+        const doc = {
+          userId,
+          name,
+          type,
+          isPublic: Boolean(isPublic),
+          parentId: parentRef === 0 ? 0 : parentRef,
+        };
+
+        const result = await dbClient.db.collection('files').insertOne(doc);
+        return res.status(201).json({
+          id: result.insertedId.toString(),
+          userId: userId.toString(),
+          name,
+          type,
+          isPublic: Boolean(isPublic),
+          parentId: parentRef === 0 ? 0 : parentRef.toString(),
+        });
+      }
+
+      // 5) Sinon (file|image) -> écrire en disque puis insert
+      const folderPath = process.env.FOLDER_PATH && process.env.FOLDER_PATH.trim()
+        ? process.env.FOLDER_PATH.trim()
+        : '/tmp/files_manager';
+
+      // Crée le dossier si absent
+      await fs.mkdir(folderPath, { recursive: true });
+
+      const localName = uuidv4();
+      const localPath = path.join(folderPath, localName);
+
+      // data est en Base64 → écrire en clair
+      const fileBuffer = Buffer.from(data, 'base64');
+      await fs.writeFile(localPath, fileBuffer);
+
+      const doc = {
+        userId,
+        name,
+        type,
+        isPublic: Boolean(isPublic),
+        parentId: parentRef === 0 ? 0 : parentRef,
+        localPath,
+      };
+
+      const result = await dbClient.db.collection('files').insertOne(doc);
+
+      return res.status(201).json({
+        id: result.insertedId.toString(),
+        userId: userId.toString(),
+        name,
+        type,
+        isPublic: Boolean(isPublic),
+        parentId: parentRef === 0 ? 0 : parentRef.toString(),
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('FilesController.postUpload error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+}
+
+export default FilesController;
+```
+
+Terminal 1
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run start-server
+
+> files_manager@1.0.0 start-server
+> nodemon --exec babel-node --presets @babel/preset-env ./server.js
+
+[nodemon] 2.0.22
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `babel-node --presets @babel/preset-env ./server.js`
+(node:9483) [MONGODB DRIVER] Warning: Current Server Discovery and Monitoring engine is deprecated, and will be removed in a future version. To use the new Server Discover and Monitoring engine, pass option { useUnifiedTopology: true } to the MongoClient constructor.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Server running on port 5000
 
 ```
 
+Terminal 2
 ```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0.0:5000/connect -H "Authorization: Basic Ym9iQGR5bGFuLmNvbTp0b3RvMTIzNCE=" ; echo ""
+{"token":"a4053096-bb40-4940-8c62-e7cdc146c504"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XPOST 0.0.0.0:5000/files -H "X-Token: a4053096-bb40-4940-8c62-e7cdc146c504" -H "Content-Type: application/json" -d '{ "name": "myText.txt", "type":
+"file", "data": "SGVsbG8gV2Vic3RhY2shCg==" }' ; echo ""
+{"id":"68b8cba5005c9d250bd0231d","userId":"68b853b17fa64416588891c1","name":"myText.txt","type":"file","isPublic":false,"parentId":0}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# ls /tmp/files_manager/
+a913195c-33c8-46e6-9726-f89693eaddab
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# cat /tmp/files_manager/a913195c-33c8-46e6-9726-f89693eaddab
+Hello Webstack!
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XPOST 0.0.0.0:5000/files -H "X-Token: a4053096-bb40-4940-8c62-e7cdc146c504" -H "Content-Type: application/json" -d '{ "name": "images", "type": "fol
+der" }' ; echo ""
+{"id":"68b8cc78005c9d250bd0231e","userId":"68b853b17fa64416588891c1","name":"images","type":"folder","isPublic":false,"parentId":0}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# cat image_upload.py
+cat: image_upload.py: No such file or directory
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# cat image_upload.py
+import base64
+import requests
+import sys
 
+file_path = sys.argv[1]
+file_name = file_path.split('/')[-1]
+
+file_encoded = None
+with open(file_path, "rb") as image_file:
+    file_encoded = base64.b64encode(image_file.read()).decode('utf-8')
+
+r_json = { 'name': file_name, 'type': 'image', 'isPublic': True, 'data': file_encoded, 'parentId': sys.argv[3] }
+r_headers = { 'X-Token': sys.argv[2] }
+
+r = requests.post("http://0.0.0.0:5000/files", json=r_json, headers=r_headers)
+print(r.json())
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# python image_upload.py image.png f21fb953-16f9-46ed-8d9c-84c6450ec80f 5f1e881cc7ba06511e683b23
+Command 'python' not found, did you mean:
+  command 'python3' from deb python3
+  command 'python' from deb python-is-python3
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# python3 image_upload.py image.png
+f21fb953-16f9-46ed-8d9c-84c6450ec80f 5f1e881cc7ba06511e683b23
+Traceback (most recent call last):
+  File "/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager/image_upload.py", line 9, in <module>
+    with open(file_path, "rb") as image_file:
+FileNotFoundError: [Errno 2] No such file or directory: 'image.png'
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# 
 ```
 
 # Task6
