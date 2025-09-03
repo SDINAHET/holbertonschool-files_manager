@@ -446,6 +446,12 @@ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_ma
 root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0curl 0.0.0.0:5000/stats
 {"users":0,"files":0}
 root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#  curl 0.0.0.0:5000/status ; echo ""5000/status ; echo ""
+{"redis":true,"db":true}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0.0:5000/stats ; echo ""
+{"users":0,"files":0}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
 ```
 
 # Task3
