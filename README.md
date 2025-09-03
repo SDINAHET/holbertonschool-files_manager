@@ -223,3 +223,128 @@ true
 0
 0
 ```
+
+db.mjs
+```bash
+// utils/db.mjs
+import mongodb from 'mongodb';
+
+const { MongoClient } = mongodb;
+
+class DBClient {
+  constructor() {
+    const host = process.env.DB_HOST || 'localhost';
+    const port = process.env.DB_PORT || 27017;
+    const database = process.env.DB_DATABASE || 'files_manager';
+
+    this.dbName = database;
+    this.connected = false;
+    this.db = null;
+
+    const url = `mongodb://${host}:${port}`;
+    this.client = new MongoClient(url);
+
+    this.client.connect()
+      .then(() => {
+        this.db = this.client.db(this.dbName);
+        this.connected = true;
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        // console.error('MongoDB client error:', err?.message || err);
+        console.error('MongoDB client error:', (err && err.message) ? err.message : err);
+        this.connected = false;
+      });
+  }
+
+  isAlive() {
+    return this.connected;
+  }
+
+  async nbUsers() {
+    if (!this.db) return 0;
+    return this.db.collection('users').countDocuments();
+  }
+
+  async nbFiles() {
+    if (!this.db) return 0;
+    return this.db.collection('files').countDocuments();
+  }
+}
+
+const dbClient = new DBClient();
+
+export { DBClient };
+export default dbClient;
+```
+
+
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run dev 1_main.js
+
+> files_manager@1.0.0 dev
+> nodemon --exec babel-node --presets @babel/preset-env 1_main.js
+
+[nodemon] 2.0.22
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `babel-node --presets @babel/preset-env 1_main.js`
+false
+(node:3482) [MONGODB DRIVER] Warning: Current Server Discovery and Monitoring engine is deprecated, and will be removed in a future version. To use the new Server Discover and Monitoring engine, pass option { useUnifiedTopology: true } to the MongoClient constructor.
+(Use `node --trace-warnings ...` to show where the warning was created)
+true
+0
+0
+^C
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm list eslint
+files_manager@1.0.0 /mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager
+├─┬ eslint-config-airbnb-base@14.2.1
+│ └── eslint@6.8.0 deduped
+├─┬ eslint-plugin-import@2.32.0
+│ └── eslint@6.8.0 deduped
+├─┬ eslint-plugin-jest@22.21.0
+│ ├─┬ @typescript-eslint/experimental-utils@1.13.0
+│ │ └── eslint@6.8.0 deduped
+│ └── eslint@6.8.0 deduped
+└── eslint@6.8.0
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npx eslint utils/db.mjs
+
+/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager/utils/db.mjs
+  25:52  error  Parsing error: Unexpected token .
+
+✖ 1 problem (1 error, 0 warnings)
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
+
+
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run dev 1_main.js
+
+> files_manager@1.0.0 dev
+> nodemon --exec babel-node --presets @babel/preset-env 1_main.js
+
+[nodemon] 2.0.22
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `babel-node --presets @babel/preset-env 1_main.js`
+false
+(node:3754) [MONGODB DRIVER] Warning: Current Server Discovery and Monitoring engine is deprecated, and will be removed in a future version. To use the new Server Discover and Monitoring engine, pass option { useUnifiedTopology: true } to the MongoClient constructor.
+(Use `node --trace-warnings ...` to show where the warning was created)
+true
+0
+0
+^C
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npx eslint utils/db.mjs
+
+/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager/utils/db.mjs
+  2:1  error  Expected 1 empty line after import statement not followed by another import  import/newline-after-import
+
+✖ 1 problem (1 error, 0 warnings)
+  1 error and 0 warnings potentially fixable with the `--fix` option.
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npx eslint utils/db.mjs
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
+```

@@ -1,5 +1,6 @@
 // utils/db.mjs
 import mongodb from 'mongodb';
+
 const { MongoClient } = mongodb;
 
 class DBClient {
@@ -13,7 +14,7 @@ class DBClient {
     this.db = null;
 
     const url = `mongodb://${host}:${port}`;
-    this.client = new MongoClient(url, { useUnifiedTopology: true });
+    this.client = new MongoClient(url);
 
     this.client.connect()
       .then(() => {
@@ -21,13 +22,15 @@ class DBClient {
         this.connected = true;
       })
       .catch((err) => {
-        console.error('MongoDB client error:', err && err.message ? err.message : err);
+        // eslint-disable-next-line no-console
+        // console.error('MongoDB client error:', err?.message || err);
+        console.error('MongoDB client error:', (err && err.message) ? err.message : err);
         this.connected = false;
       });
   }
 
   isAlive() {
-    return this.connected === true;
+    return this.connected;
   }
 
   async nbUsers() {
