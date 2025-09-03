@@ -692,12 +692,214 @@ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_ma
 
 # Task4
 
+routes/index.js
 ```bash
+// routes/index.js
+import { Router } from 'express';
+import AppController from '../controllers/AppController';
+import UsersController from '../controllers/UsersController';
+import AuthController from '../controllers/AuthController';
+
+const router = Router();
+
+router.get('/status', AppController.getStatus);
+router.get('/stats', AppController.getStats);
+
+router.post('/users', UsersController.postNew);
+
+router.get('/connect', AuthController.getConnect);
+router.get('/disconnect', AuthController.getDisconnect);
+router.get('/users/me', UsersController.getMe);
+
+export default router;
 
 ```
 
+controllers/AuthController.js
 ```bash
+// controllers/AuthController.js
+import crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
+import dbClient from '../utils/db';
+import redisClient from '../utils/redis';
 
+class AuthController {
+  static async getConnect(req, res) {
+    try {
+      const authHeader = req.header('Authorization') || '';
+      if (!authHeader.startsWith('Basic ')) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const base64Creds = authHeader.split(' ')[1];
+      let decoded = '';
+      try {
+        decoded = Buffer.from(base64Creds, 'base64').toString('utf-8');
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const colonIndex = decoded.indexOf(':');
+      if (colonIndex === -1) return res.status(401).json({ error: 'Unauthorized' });
+
+      const email = decoded.slice(0, colonIndex);
+      const password = decoded.slice(colonIndex + 1);
+      const hashed = crypto.createHash('sha1').update(password).digest('hex');
+
+      const user = await dbClient.db.collection('users').findOne({ email, password: hashed });
+      if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+      const token = uuidv4();
+      const key = `auth_${token}`;
+      // TTL 24h
+      await redisClient.set(key, user._id.toString(), 24 * 60 * 60);
+
+      return res.status(200).json({ token });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('AuthController.getConnect error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
+  static async getDisconnect(req, res) {
+    try {
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+      const key = `auth_${token}`;
+      const userId = await redisClient.get(key);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      await redisClient.del(key);
+      return res.status(204).send();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('AuthController.getDisconnect error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+}
+
+export default AuthController;
+
+```
+
+controllers/UsersController.js
+```bash
+// controllers/UsersController.js
+import crypto from 'crypto';
+import mongodb from 'mongodb';
+import dbClient from '../utils/db';
+import redisClient from '../utils/redis';
+
+const { ObjectId } = mongodb;
+
+class UsersController {
+  static async postNew(req, res) {
+    const { email, password } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    if (!password) return res.status(400).json({ error: 'Missing password' });
+
+    try {
+      const usersCol = dbClient.db.collection('users');
+      const existing = await usersCol.findOne({ email });
+      if (existing) return res.status(400).json({ error: 'Already exist' });
+
+      const hashed = crypto.createHash('sha1').update(password).digest('hex');
+      const result = await usersCol.insertOne({ email, password: hashed });
+      return res.status(201).json({ id: result.insertedId.toString(), email });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('UsersController.postNew error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
+  static async getMe(req, res) {
+    try {
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+      const key = `auth_${token}`;
+      const userId = await redisClient.get(key);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      let _id;
+      try {
+        _id = new ObjectId(userId);
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const user = await dbClient.db.collection('users').findOne({ _id });
+      if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+      return res.status(200).json({ id: user._id.toString(), email: user.email });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('UsersController.getMe error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+}
+
+export default UsersController;
+
+```
+
+server.js
+```bash
+// server.js
+import express from 'express';
+import routes from './routes/index';
+
+const app = express();
+app.use(express.json());
+app.use('/', routes);
+
+const port = process.env.PORT || 5000;
+app.listen(port, () => {
+  // eslint-disable-next-line no-console
+  console.log(`Server running on port ${port}`);
+});
+
+export default app;
+
+```
+
+Terminal 1
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run start-server
+
+> files_manager@1.0.0 start-server
+> nodemon --exec babel-node --presets @babel/preset-env ./server.js
+
+[nodemon] 2.0.22
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `babel-node --presets @babel/preset-env ./server.js`
+(node:9027) [MONGODB DRIVER] Warning: Current Server Discovery and Monitoring engine is deprecated, and will be removed in a future version. To use the new Server Discover and Monitoring engine, pass option { useUnifiedTopology: true } to the MongoClient constructor.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Server running on port 5000
+
+```
+
+Terminal 2
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#  curl 0.0.0.0:5000/connect -H "Authorization: Basic Ym9iQGR5bGFuLmNvbTp0b3RvMTIzNCE=" ; echo ""
+{"token":"a7872877-5f98-4157-a743-4c6cde6b63e0"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#  curl 0.0.0.0:5000/users/me -H "X-Token: a7872877-5f98-4157-a743-4c6cde6b63e0" ; echo ""
+{"id":"68b853b17fa64416588891c1","email":"bob@dylan.com"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0.0:5000/disconnect -H "X-Token: a7872877-5f98-4157-a743-4c6cde6b63e0" ; echo ""
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0.0:5000/users/me -H "X-Token: a7872877-5f98-4157-a743-4c6cde6b63e0" ; echo ""
+{"error":"Unauthorized"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npx eslint controllers/UsersController.js routes/index.js --fix
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
 ```
 
 # Task5
