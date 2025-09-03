@@ -454,6 +454,64 @@ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_ma
 root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
 ```
 
+Pour tester uniquement les 3 fichiers (server.js, routes/index.js, controllers/AppController.js) avec ESLint, il te suffit de lancer :
+
+```bash
+npx eslint server.js routes/index.js controllers/AppController.js
+```
+Si tu veux aussi corriger automatiquement les erreurs simples :
+```bash
+npx eslint server.js routes/index.js controllers/AppController.js
+```
+
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npx eslint server.js routes/index.js controllers/AppController.js
+
+/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager/server.js
+  3:20  error  Unexpected use of file extension "js" for "./routes/index.js"  import/extensions
+
+/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager/routes/index.js
+  3:27  error  Unexpected use of file extension "js" for "../controllers/AppController.js"  import/extensions
+
+/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager/controllers/AppController.js
+  2:22  error  Unexpected use of file extension "mjs" for "../utils/db.mjs"     import/extensions
+  3:25  error  Unexpected use of file extension "mjs" for "../utils/redis.mjs"  import/extensions
+
+✖ 4 problems (4 errors, 0 warnings)
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npx eslint server.js routes/index.js controllers/AppController.js --fix
+
+/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager/server.js
+  3:20  error  Unexpected use of file extension "js" for "./routes/index.js"  import/extensions
+
+/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager/routes/index.js
+  3:27  error  Unexpected use of file extension "js" for "../controllers/AppController.js"  import/extensions
+
+/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager/controllers/AppController.js
+  2:22  error  Unexpected use of file extension "mjs" for "../utils/db.mjs"     import/extensions
+  3:25  error  Unexpected use of file extension "mjs" for "../utils/redis.mjs"  import/extensions
+
+✖ 4 problems (4 errors, 0 warnings)
+```
+```bash
+correction
+❌ Mauvais :
+
+import routes from './routes/index.js';
+import dbClient from '../utils/db.mjs';
+
+
+✅ Correct :
+
+import routes from './routes/index';
+import dbClient from '../utils/db';
+```
+
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npx eslint server.js routes/index.js controllers/AppController.js --fix
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
+```
+
 # Task3
 
 ```bash
