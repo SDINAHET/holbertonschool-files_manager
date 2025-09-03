@@ -136,3 +136,20 @@ export default redisClient;
 
 ```
 
+
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run dev main.js
+
+> files_manager@1.0.0 dev
+> nodemon --exec babel-node --presets @babel/preset-env main.js
+
+[nodemon] 2.0.22
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `babel-node --presets @babel/preset-env main.js`
+true
+null
+12
+null
+```
