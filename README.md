@@ -355,7 +355,8 @@ server.js
 ```js
 // server.js
 import express from 'express';
-import routes from './routes/index.js';
+// import routes from './routes/index.js';
+import routes from './routes/index';
 
 const app = express();
 
@@ -376,7 +377,8 @@ routes/index.js
 ```js
 // routes/index.js
 import { Router } from 'express';
-import AppController from '../controllers/AppController.js';
+// import AppController from '../controllers/AppController.js';
+import AppController from '../controllers/AppController';
 
 const router = Router();
 
@@ -390,8 +392,10 @@ export default router;
 controllers/AppController.js
 ```js
 // controllers/AppController.js
-import dbClient from '../utils/db.mjs';
-import redisClient from '../utils/redis.mjs';
+// import dbClient from '../utils/db.mjs';
+// import redisClient from '../utils/redis.mjs';
+import dbClient from '../utils/db';
+import redisClient from '../utils/redis';
 
 class AppController {
   static getStatus(req, res) {
