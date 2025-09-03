@@ -518,12 +518,176 @@ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_ma
 
 # Task3
 
+routes/index.js
 ```bash
+// routes/index.js
+import { Router } from 'express';
+import AppController from '../controllers/AppController';
+import UsersController from '../controllers/UsersController';  // <-- ajouté task3
+
+const router = Router();
+
+router.get('/status', AppController.getStatus);
+router.get('/stats', AppController.getStats);
+router.post('/users', UsersController.postNew); // <-- ajouté task3
+
+export default router;
+
+```
+
+controllers/UsersController.js
+```bash
+// controllers/UsersController.js
+import crypto from 'crypto';
+import dbClient from '../utils/db';
+
+class UsersController {
+  static async postNew(req, res) {
+    const { email, password } = req.body || {};
+
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    if (!password) return res.status(400).json({ error: 'Missing password' });
+
+    try {
+      if (!dbClient.db) return res.status(500).json({ error: 'Database not initialized' });
+
+      const usersCol = dbClient.db.collection('users');
+
+      const existing = await usersCol.findOne({ email });
+      if (existing) return res.status(400).json({ error: 'Already exist' });
+
+      const hashed = crypto.createHash('sha1').update(password).digest('hex');
+
+      const result = await usersCol.insertOne({ email, password: hashed });
+
+      return res.status(201).json({ id: result.insertedId.toString(), email });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('UsersController.postNew error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+}
+
+export default UsersController;
+
+```
+
+server.js
+```bash
+// server.js
+import express from 'express';
+import routes from './routes/index';
+
+const app = express();
+
+// routes
+app.use(express.json()); // <-- nécessaire pour lire req.body JSON  task3
+app.use('/', routes);
+
+const port = process.env.PORT || 5000;
+app.listen(port, () => {
+  // eslint-disable-next-line no-console
+  console.log(`Server running on port ${port}`);
+});
+
+export default app;
+
+```
+
+
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run start-server
+# Server running on port 5000
+
+> files_manager@1.0.0 start-server
+> nodemon --exec babel-node --presets @babel/preset-env ./server.js
+
+[nodemon] 2.0.22
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `babel-node --presets @babel/preset-env ./server.js`
+(node:5720) [MONGODB DRIVER] Warning: Current Server Discovery and Monitoring engine is deprecated, and will be removed in a future version. To use the new Server Discover and Monitoring engine, pass option { useUnifiedTopology: true } to the MongoClient constructor.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Server running on port 5000
 
 ```
 
 ```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0.0:5000/users -XPOST -H "Content-Type: application/json" -d '{ "email": "bob@dylan.com", "password": "toto1234!" }' ; echo ""
+{"id":"68b853b17fa64416588891c1","email":"bob@dylan.com"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# echo 'db.users.find()' | mongo files_manager
+Command 'mongo' not found, did you mean:
+  command 'mono' from deb mono-runtime (6.8.0.105+dfsg-3.2)
+Try: apt install <deb name>
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
 
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# mongosh "mongodb://localhost:27017/files_manager"
+Current Mongosh Log ID: 68b855de277e60b4aee94969
+Connecting to:          mongodb://localhost:27017/files_manager?directConnection=true&serverSelectionTimeoutMS=2000&appName=mongosh+2.3.4
+Using MongoDB:          8.0.4
+Using Mongosh:          2.3.4
+mongosh 2.5.0 is available for download: https://www.mongodb.com/try/download/shell
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+------
+   The server generated these startup warnings when booting
+   2025-09-03T13:44:10.913+02:00: Using the XFS filesystem is strongly recommended with the WiredTiger storage engine. See http://dochub.mongodb.org/core/prodnotes-filesystem
+   2025-09-03T13:44:12.826+02:00: Access control is not enabled for the database. Read and write access to data and configuration is unrestricted
+   2025-09-03T13:44:12.826+02:00: For customers running the current memory allocator, we suggest changing the contents of the following sysfsFile
+   2025-09-03T13:44:12.826+02:00: We suggest setting the contents of sysfsFile to 0.
+   2025-09-03T13:44:12.826+02:00: vm.max_map_count is too low
+   2025-09-03T13:44:12.827+02:00: We suggest setting swappiness to 0 or 1, as swapping can cause performance problems.
+------
+
+files_manager> db.users.find().pretty()
+[
+  {
+    _id: ObjectId('68b853b17fa64416588891c1'),
+    email: 'bob@dylan.com',
+    password: '89cad29e3ebc1035b29b1478a8e70854f25fa2b2'
+  }
+]
+files_manager>
+
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# echo 'db.users.find()' | mongosh f
+iles_manager
+Current Mongosh Log ID: 68b85624a591327f85e94969
+Connecting to:          mongodb://127.0.0.1:27017/files_manager?directConnection=true&serverSelectionTimeoutMS=2000&appName=mongosh+2.3.4
+Using MongoDB:          8.0.4
+Using Mongosh:          2.3.4
+mongosh 2.5.7 is available for download: https://www.mongodb.com/try/download/shell
+
+For mongosh info see: https://www.mongodb.com/docs/mongodb-shell/
+
+------
+   The server generated these startup warnings when booting
+   2025-09-03T13:44:10.913+02:00: Using the XFS filesystem is strongly recommended with the WiredTiger storage engine. See http://dochub.mongodb.org/core/prodnotes-filesystem
+   2025-09-03T13:44:12.826+02:00: Access control is not enabled for the database. Read and write access to data and configuration is unrestricted
+   2025-09-03T13:44:12.826+02:00: For customers running the current memory allocator, we suggest changing the contents of the following sysfsFile
+   2025-09-03T13:44:12.826+02:00: We suggest setting the contents of sysfsFile to 0.
+   2025-09-03T13:44:12.826+02:00: vm.max_map_count is too low
+   2025-09-03T13:44:12.827+02:00: We suggest setting swappiness to 0 or 1, as swapping can cause performance problems.
+------
+
+files_manager> db.users.find()
+[
+  {
+    _id: ObjectId('68b853b17fa64416588891c1'),
+    email: 'bob@dylan.com',
+    password: '89cad29e3ebc1035b29b1478a8e70854f25fa2b2'
+  }
+]
+files_manager> root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
+
+ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0.0:5000/users -XPOST -H "Content-Type: application/json" -d '{ "email": "bob@dylan.com", "password": "toto1234!" }' ; echo ""
+{"error":"Already exist"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0.0:5000/users -XPOST -H "Content-Type: application/json" -d '{ "email": "bob@dylan.com" }' ; echo ""
+{"error":"Missing password"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
 ```
 
 # Task4
