@@ -22,8 +22,12 @@ class RedisClient {
   /**
    * Returns true if connected to Redis, otherwise false
    */
+  // isAlive() {
+  //   return !!this.client && this.client.connected === true;
+  // }
+  // Variante optionnelle (pas obligatoire pour Holberton)
   isAlive() {
-    return !!this.client && this.client.connected === true;
+    return !!this.client && (this.client.connected === true || this.client.ready === true);
   }
 
   /**
