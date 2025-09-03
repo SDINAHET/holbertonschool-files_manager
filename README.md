@@ -351,12 +351,101 @@ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_ma
 
 # Task2
 
-```bash
+server.js
+```js
+// server.js
+import express from 'express';
+import routes from './routes/index.js';
+
+const app = express();
+
+// routes
+app.use('/', routes);
+
+const port = process.env.PORT || 5000;
+app.listen(port, () => {
+  // eslint-disable-next-line no-console
+  console.log(`Server running on port ${port}`);
+});
+
+export default app;
 
 ```
 
-```bash
+routes/index.js
+```js
+// routes/index.js
+import { Router } from 'express';
+import AppController from '../controllers/AppController.js';
 
+const router = Router();
+
+router.get('/status', AppController.getStatus);
+router.get('/stats', AppController.getStats);
+
+export default router;
+
+```
+
+controllers/AppController.js
+```js
+// controllers/AppController.js
+import dbClient from '../utils/db.mjs';
+import redisClient from '../utils/redis.mjs';
+
+class AppController {
+  static getStatus(req, res) {
+    return res.status(200).json({
+      redis: redisClient.isAlive(),
+      db: dbClient.isAlive(),
+    });
+  }
+
+  static async getStats(req, res) {
+    try {
+      const users = await dbClient.nbUsers();
+      const files = await dbClient.nbFiles();
+      return res.status(200).json({ users, files });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Stats error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+}
+
+export default AppController;
+
+```
+
+Terminal1
+```bash
+npm run start-server
+# -> Server running on port 5000
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run start-server
+# -> Server running on port 5000
+
+> files_manager@1.0.0 start-server
+> nodemon --exec babel-node --presets @babel/preset-env ./server.js
+
+[nodemon] 2.0.22
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `babel-node --presets @babel/preset-env ./server.js`
+(node:4361) [MONGODB DRIVER] Warning: Current Server Discovery and Monitoring engine is deprecated, and will be removed in a future version. To use the new Server Discover and Monitoring engine, pass option { useUnifiedTopology: true } to the MongoClient constructor.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Server running on port 5000
+```
+
+Terminal2
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0.0:5000/status
+{"redis":true,"db":true}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0curl 0.0.0.0:5000/stats
+{"users":0,"files":0}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
 ```
 
 # Task3
