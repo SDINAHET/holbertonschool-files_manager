@@ -21,7 +21,4 @@ router.post('/files', FilesController.postUpload); // <-- add task5
 router.get('/files/:id', FilesController.getShow); // <-- add task6
 router.get('/files', FilesController.getIndex); // <-- add task6
 
-router.put('/files/:id/publish', FilesController.putPublish); // <-- add task7
-router.put('/files/:id/unpublish', FilesController.putUnpublish); // <-- add task7
-
 export default router;
