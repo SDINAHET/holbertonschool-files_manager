@@ -1419,6 +1419,91 @@ bob@dylan:~$ TOKEN="9c5e669e-12b2-44f2-b48c-fc5d1215ea89"
 bob@dylan:~$ curl -XGET 0.0.0.0:5000/files -H "X-Token: $TOKEN" ; echo ""
 ```
 
+```bash
+bob@dylan:~$ Token="9c5e669e-12b2-44f2-b48c-fc5d1215ea89"
+
+bob@dylan:~$ curl -XGET 0.0.0.0:5000/files -H "X-Token: $Token" ; echo ""
+
+bob@dylan:~$ curl -XGET "0.0.0.0:5000/files?parentId=5f1e881cc7ba06511e683b23" -H "X-Token: $Token" ; echo ""
+
+bob@dylan:~$ curl -XGET 0.0.0.0:5000/files/5f1e8896c7ba06511e683b25 -H "X-Token: $Token" ; echo ""
+```
+
+
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0.0:5000/connect -H "Authorization: Basic Ym9iQGR5bGFuLmNvbTp0b3RvMTIzNCE=" ; echo ""
+{"token":"3e5da240-c0d8-4745-82d7-9c90ce4739df"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# Token="3e5da240-c0d8-4745-82d7-9c90ce4739df"
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XGET 0.0.0.0:5000/files -H "X-Token: $Token" ; echo ""
+[{"id":"68b8cba5005c9d250bd0231d","userId":"68b853b17fa64416588891c1","name":"myText.txt","type":"file","isPublic":false,"parentId":0},{"id":"68b8cc78005c9d250bd0231e","userId":"68b853b17fa64416588891c1","name":"images","type":"folder","isPublic":false,"parentId":0}]
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XGET "0.0.0.0:5000/files?parentId=5f1e881cc7ba06511e683b23" -H "X-Token: $Token" ; echo ""
+[]
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XGET 0.0.0.0:5000/files/5f1e8896c7ba06511e683b25 -H "X-Token: $Token" ; echo ""
+{"error":"Not found"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
+
+```
+
+````bash
+# Créer des données Base64 (ici on encode /etc/hostname juste pour tester)
+DATA=$(base64 -w 0 /etc/hostname)
+
+# Uploader un "image.png" dans le dossier 'images'
+curl -XPOST 0.0.0.0:5000/files \
+  -H "X-Token: $Token" -H "Content-Type: application/json" \
+  -d "{\"name\":\"image.png\",\"type\":\"image\",\"isPublic\":true,\"parentId\":\"68b8cc78005c9d250bd0231e\",\"data\":\"$DATA\"}" ; echo ""
+
+# Relister le contenu du dossier 'images' (tu verras l'id de l'image renvoyée ci-dessus)
+curl -XGET "0.0.0.0:5000/files?parentId=68b8cc78005c9d250bd0231e" -H "X-Token: $Token" ; echo ""
+
+
+
+bob@dylan:~$ curl 0.0.0.0:5000/connect -H "Authorization: Basic Ym9iQGR5bGFuLmNvbTp0b3RvMTIzNCE=" ; echo ""
+
+bob@dylan:~$ Token="9c5e669e-12b2-44f2-b48c-fc5d1215ea89"
+
+# Lister tous tes fichiers (racine)
+bob@dylan:~$ curl -XGET 0.0.0.0:5000/files -H "X-Token: $Token" ; echo ""
+
+# Lister le contenu du dossier "images"
+bob@dylan:~$ curl -XGET "0.0.0.0:5000/files?parentId=68b8cc78005c9d250bd0231e" -H "X-Token: $Token" ; echo ""
+
+# Récupérer le document "myText.txt" par id
+bob@dylan:~$ curl -XGET 0.0.0.0:5000/files/68b8cba5005c9d250bd0231d -H "X-Token: $Token" ; echo ""
+
+# (optionnel) Pagination — page 2 du dossier "images"
+bob@dylan:~$ curl -XGET "0.0.0.0:5000/files?parentId=68b8cc78005c9d250bd0231e&page=1" -H "X-Token: $Token" ; echo ""
+
+```
+
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl 0.0.0.0:5000/connect -H "Authorization: Basic Ym9iQGR5bGFuLmNvbTp0b3RvMTIzNCE=" ; echo ""
+{"token":"7f10512e-df87-413d-8636-0ff47d4efe96"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XPUT 0.0.0.0:5000/files/5f1e879ec7ba06511e683b22/unpublish -H "X-Token: 7f10512e-df87-413d-8636-0ff47d4efe96" ; echo ""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot PUT /files/5f1e879ec7ba06511e683b22/unpublish</pre>
+</body>
+</html>
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XGET 0.0.0.0:5000/files -H "X-Token: 7f10512e-df87-413d-8636-0ff47d4efe96" ; echo ""
+[{"id":"68b8cba5005c9d250bd0231d","userId":"68b853b17fa64416588891c1","name":"myText.txt","type":"file","isPublic":false,"parentId":0},{"id":"68b8cc78005c9d250bd0231e","userId":"68b853b17fa64416588891c1","name":"images","type":"folder","isPublic":false,"parentId":0}]
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XGET 0.0.0.0:5000/files?parentId=5f1e881cc7ba06511e683b23 -H "X-Token: 7f10512e-df87-413d-8636-0ff47d4efe96" ; echo ""
+[]
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XGET 0.0.0.0:5000/files?parentId=68b8cc78005c9d250bd0231e -H "X-Token: 7f10512e-df87-413d-8636-0ff47d4efe96" ; echo ""
+[{"id":"68b9ff825c2bb8366bc6bbd1","userId":"68b853b17fa64416588891c1","name":"image.png","type":"image","isPublic":true,"parentId":"68b8cc78005c9d250bd0231e"}]
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XGET 0.0.0.0:5000/files/68b8cc78005c9d250bd0231e -H "X-Token: 7f10512e-df87-413d-8636-0ff47d4efe96" ; echo ""
+{"id":"68b8cc78005c9d250bd0231e","userId":"68b853b17fa64416588891c1","name":"images","type":"folder","isPublic":false,"parentId":0}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
+```
+*** parentId=68b8cc78005c9d250bd0231e" ***
+
+
 # Task7
 
 ```bash
