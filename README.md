@@ -1506,8 +1506,376 @@ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_ma
 
 # Task7
 
+routes/index.js
 ```bash
+// routes/index.js
+import { Router } from 'express';
+import AppController from '../controllers/AppController';
+import UsersController from '../controllers/UsersController'; // <-- ajouté task3
+import AuthController from '../controllers/AuthController'; // <-- ajouté task4
+import FilesController from '../controllers/FilesController'; // <-- add task5
 
+const router = Router();
+
+router.get('/status', AppController.getStatus);
+router.get('/stats', AppController.getStats);
+
+router.post('/users', UsersController.postNew); // <-- ajouté task3
+
+router.get('/connect', AuthController.getConnect); // <-- ajouté task4
+router.get('/disconnect', AuthController.getDisconnect); // <-- ajouté task4
+router.get('/users/me', UsersController.getMe); // <-- ajouté task4
+
+router.post('/files', FilesController.postUpload); // <-- add task5
+
+router.get('/files/:id', FilesController.getShow); // <-- add task6
+router.get('/files', FilesController.getIndex); // <-- add task6
+
+router.put('/files/:id/publish', FilesController.putPublish); // <-- add task7
+router.put('/files/:id/unpublish', FilesController.putUnpublish); // <-- add task7
+
+export default router;
+
+```
+
+controllers/FilesController.js
+```bash
+// controllers/FilesController.js
+import { promises as fs } from 'fs';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import mongodb from 'mongodb';
+import redisClient from '../utils/redis';
+import dbClient from '../utils/db';
+
+const { ObjectId } = mongodb;
+const VALID_TYPES = new Set(['folder', 'file', 'image']);
+
+// Formate les documents renvoyés par l'API
+function mapFileDoc(doc) {
+  return {
+    id: doc._id.toString(),
+    userId: doc.userId.toString(),
+    name: doc.name,
+    type: doc.type,
+    isPublic: doc.isPublic === true,
+    parentId:
+      (doc.parentId && doc.parentId !== 0 && doc.parentId !== '0')
+        ? doc.parentId.toString()
+        : 0,
+  };
+}
+
+class FilesController {
+  static async postUpload(req, res) {
+    try {
+      // 1) Auth via X-Token -> userId en Redis
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+      const userIdStr = await redisClient.get(`auth_${token}`);
+      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+      let userId;
+      try {
+        userId = new ObjectId(userIdStr);
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // 2) Inputs
+      const {
+        name,
+        type,
+        parentId = 0,
+        isPublic = false,
+        data,
+      } = req.body || {};
+
+      if (!name) return res.status(400).json({ error: 'Missing name' });
+      if (!type || !VALID_TYPES.has(type)) {
+        return res.status(400).json({ error: 'Missing type' });
+      }
+      if (type !== 'folder' && !data) {
+        return res.status(400).json({ error: 'Missing data' });
+      }
+
+      // 3) parentId validations
+      let parentRef = 0;
+      if (parentId && parentId !== 0 && parentId !== '0') {
+        let parentObjId;
+        try {
+          parentObjId = new ObjectId(parentId);
+        } catch (e) {
+          return res.status(400).json({ error: 'Parent not found' });
+        }
+
+        const parentDoc = await dbClient.db.collection('files').findOne({ _id: parentObjId });
+        if (!parentDoc) return res.status(400).json({ error: 'Parent not found' });
+        if (parentDoc.type !== 'folder') {
+          return res.status(400).json({ error: 'Parent is not a folder' });
+        }
+        parentRef = parentObjId;
+      }
+
+      // 4) Si dossier -> insert direct
+      if (type === 'folder') {
+        const doc = {
+          userId,
+          name,
+          type,
+          isPublic: Boolean(isPublic),
+          parentId: parentRef === 0 ? 0 : parentRef,
+        };
+
+        const result = await dbClient.db.collection('files').insertOne(doc);
+        return res.status(201).json({
+          id: result.insertedId.toString(),
+          userId: userId.toString(),
+          name,
+          type,
+          isPublic: Boolean(isPublic),
+          parentId: parentRef === 0 ? 0 : parentRef.toString(),
+        });
+      }
+
+      // 5) Sinon (file|image) -> écrire en disque puis insert
+      const folderPath = process.env.FOLDER_PATH && process.env.FOLDER_PATH.trim()
+        ? process.env.FOLDER_PATH.trim()
+        : '/tmp/files_manager';
+
+      // Crée le dossier si absent
+      await fs.mkdir(folderPath, { recursive: true });
+
+      const localName = uuidv4();
+      const localPath = path.join(folderPath, localName);
+
+      // data est en Base64 → écrire en clair
+      const fileBuffer = Buffer.from(data, 'base64');
+      await fs.writeFile(localPath, fileBuffer);
+
+      const doc = {
+        userId,
+        name,
+        type,
+        isPublic: Boolean(isPublic),
+        parentId: parentRef === 0 ? 0 : parentRef,
+        localPath,
+      };
+
+      const result = await dbClient.db.collection('files').insertOne(doc);
+
+      return res.status(201).json({
+        id: result.insertedId.toString(),
+        userId: userId.toString(),
+        name,
+        type,
+        isPublic: Boolean(isPublic),
+        parentId: parentRef === 0 ? 0 : parentRef.toString(),
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('FilesController.postUpload error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
+  // Tâche 6 — GET /files/:id
+  static async getShow(req, res) {
+    try {
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+      const userIdStr = await redisClient.get(`auth_${token}`);
+      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+      let userId;
+      try {
+        userId = new ObjectId(userIdStr);
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { id } = req.params;
+      let fileId;
+      try {
+        fileId = new ObjectId(id);
+      } catch (e) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const doc = await dbClient.db.collection('files').findOne({ _id: fileId, userId });
+      if (!doc) return res.status(404).json({ error: 'Not found' });
+
+      return res.status(200).json(mapFileDoc(doc));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('FilesController.getShow error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
+  // Tâche 6 — GET /files
+  static async getIndex(req, res) {
+    try {
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+      const userIdStr = await redisClient.get(`auth_${token}`);
+      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+      let userId;
+      try {
+        userId = new ObjectId(userIdStr);
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { parentId: parentIdRaw = 0, page: pageRaw = '0' } = req.query || {};
+      const page = Number.isNaN(parseInt(pageRaw, 10)) ? 0 : Math.max(0, parseInt(pageRaw, 10));
+
+      let parentFilter;
+      if (parentIdRaw === 0 || parentIdRaw === '0' || parentIdRaw === undefined) {
+        parentFilter = 0;
+      } else {
+        // Pas de validation obligatoire : si non convertible en ObjectId,
+        //  on garde tel quel (ne matchera rien si parent est un ObjectId)
+        try {
+          parentFilter = new ObjectId(parentIdRaw);
+        } catch (e) {
+          parentFilter = String(parentIdRaw);
+        }
+      }
+
+      const pipeline = [
+        { $match: { userId, parentId: parentFilter } },
+        { $skip: page * 20 },
+        { $limit: 20 },
+      ];
+
+      const cursor = dbClient.db.collection('files').aggregate(pipeline);
+      const docs = await cursor.toArray();
+
+      const list = docs.map(mapFileDoc);
+      return res.status(200).json(list);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('FilesController.getIndex error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
+  // Tâche 7 — PUT /files/:id/publish
+  static async putPublish(req, res) {
+    try {
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+      const userIdStr = await redisClient.get(`auth_${token}`);
+      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+      let userId;
+      try {
+        userId = new ObjectId(userIdStr);
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { id } = req.params;
+      let fileId;
+      try {
+        fileId = new ObjectId(id);
+      } catch (e) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const filesCol = dbClient.db.collection('files');
+      const owned = await filesCol.findOne({ _id: fileId, userId });
+      if (!owned) return res.status(404).json({ error: 'Not found' });
+
+      await filesCol.updateOne({ _id: fileId }, { $set: { isPublic: true } });
+      const updated = await filesCol.findOne({ _id: fileId });
+
+      return res.status(200).json(mapFileDoc(updated));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('FilesController.putPublish error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
+  // Tâche 7 — PUT /files/:id/unpublish
+  static async putUnpublish(req, res) {
+    try {
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+      const userIdStr = await redisClient.get(`auth_${token}`);
+      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+      let userId;
+      try {
+        userId = new ObjectId(userIdStr);
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { id } = req.params;
+      let fileId;
+      try {
+        fileId = new ObjectId(id);
+      } catch (e) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const filesCol = dbClient.db.collection('files');
+      const owned = await filesCol.findOne({ _id: fileId, userId });
+      if (!owned) return res.status(404).json({ error: 'Not found' });
+
+      await filesCol.updateOne({ _id: fileId }, { $set: { isPublic: false } });
+      const updated = await filesCol.findOne({ _id: fileId });
+
+      return res.status(200).json(mapFileDoc(updated));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('FilesController.putUnpublish error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+}
+
+export default FilesController;
+
+```
+
+Terminal 1
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# npm run start-server
+
+> files_manager@1.0.0 start-server
+> nodemon --exec babel-node --presets @babel/preset-env ./server.js
+
+[nodemon] 2.0.22
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `babel-node --presets @babel/preset-env ./server.js`
+(node:14539) [MONGODB DRIVER] Warning: Current Server Discovery and Monitoring engine is deprecated, and will be removed in a future version. To use the new Server Discover and Monitoring engine, pass option { useUnifiedTopology: true } to the MongoClient constructor.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Server running on port 5000
+
+```
+
+Terminal 2
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#  curl 0.0.0.0:5000/connect -H "Authorization: Basic Ym9iQGR5bGFuLmNvbTp0b3RvMTIzNCE=" ; echo ""
+{"token":"e86d7532-22de-4659-a6f4-90770a2dd4f3"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XGET 0.0.0.0:5000/files/5f1e8896c7ba06511e683b25 -H "X-Token: e86d7532-22de-4659-a6f4-90770a2dd4f3" ; echo ""
+{"error":"Not found"}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XGET 0.0.0.0:5000/files/68b8cc78005c9d250bd0231e -H "X-Token: e86d7532-22de-4659-a6f4-90770a2dd4f3" ; echo ""
+{"id":"68b8cc78005c9d250bd0231e","userId":"68b853b17fa64416588891c1","name":"images","type":"folder","isPublic":false,"parentId":0}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#  curl -XPUT 0.0.0.0:5000/files/68b8cc78005c9d250bd0231e/publish -H "X-Token: e86d7532-22de-4659-a6f4-90770a2dd4f3" ; echo ""
+{"id":"68b8cc78005c9d250bd0231e","userId":"68b853b17fa64416588891c1","name":"images","type":"folder","isPublic":true,"parentId":0}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -XPUT 0.0.0.0:5000/files/68b8cc78005c9d250bd0231e/unpublish -H "X-Token: e86d7532-22de-4659-a6f4-90770a2dd4f3" ; echo ""
+{"id":"68b8cc78005c9d250bd0231e","userId":"68b853b17fa64416588891c1","name":"images","type":"folder","isPublic":false,"parentId":0}
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
 ```
 
 ```bash
