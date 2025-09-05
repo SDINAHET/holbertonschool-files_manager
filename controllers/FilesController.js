@@ -226,18 +226,21 @@ class FilesController {
       // 1) Auth
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
       const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try { userId = new ObjectId(userIdStr); } catch { return res.status(401).json({ error: 'Unauthorized' }); }
+      try { userId = new ObjectId(userIdStr); } catch {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
 
-      // 2) Query params (defaults)
+      // 2) Query params
       const { parentId, page } = req.query || {};
       const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
-      // Treat "", undefined, "0", 0 as root
-      const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
+      const isRoot =
+        parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
 
       let parentFilter;
       if (isRoot) {
@@ -246,29 +249,44 @@ class FilesController {
         try {
           parentFilter = new ObjectId(parentId);
         } catch {
-          // no validation required by spec – use as-is so it simply returns []
+          // Spec says: no validation needed; use as-is so it returns [] if it doesn't match
           parentFilter = String(parentId);
         }
       }
 
-      // 3) Query (no aggregate – simpler and predictable)
-      const query = { userId, parentId: parentFilter };
+      // 3) Aggregate with pagination (exactly as the task suggests)
+      const pipeline = [
+        { $match: { userId, parentId: parentFilter } },
+        { $sort: { _id: 1 } },               // stable order
+        { $skip: pageNum * 20 },
+        { $limit: 20 },
+        {
+          $project: {
+            _id: 1,
+            userId: 1,
+            name: 1,
+            type: 1,
+            isPublic: 1,
+            parentId: 1,
+          },
+        },
+      ];
 
-      const docs = await dbClient.db
-        .collection('files')
-        .find(query, { projection: { localPath: 0 } })
-        .skip(pageNum * 20)
-        .limit(20)
-        .toArray();
+      const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
 
-      return res.status(200).json(docs.map((d) => ({
-        id: d._id.toString(),
-        userId: d.userId.toString(),
-        name: d.name,
-        type: d.type,
-        isPublic: d.isPublic === true,
-        parentId: (d.parentId && d.parentId !== 0 && d.parentId !== '0') ? d.parentId.toString() : 0,
-      })));
+      return res.status(200).json(
+        docs.map((d) => ({
+          id: d._id.toString(),
+          userId: d.userId.toString(),
+          name: d.name,
+          type: d.type,
+          isPublic: d.isPublic === true,
+          parentId:
+            d.parentId && d.parentId !== 0 && d.parentId !== '0'
+              ? d.parentId.toString()
+              : 0,
+        })),
+      );
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('FilesController.getIndex error:', err && err.message ? err.message : err);
