@@ -200,7 +200,6 @@ class FilesController {
         }
       }
 
-
       // Gestion du parentId (par défaut 0 = racine)
       let parentFilter = 0;
       if (parentIdRaw !== undefined && parentIdRaw !== '' && parentIdRaw !== '0') {

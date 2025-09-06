@@ -29,4 +29,7 @@ router.get('/files', FilesController.getIndex); // <-- add task6
 router.put('/files/:id/publish', FilesController.putPublish); // <-- add task7
 router.put('/files/:id/unpublish', FilesController.putUnpublish); // <-- add task7
 
+// Task 8
+router.get('/files/:id/data', FilesController.getFile); // <-- add task8
+
 export default router;
