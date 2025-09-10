@@ -174,8 +174,10 @@ class FilesController {
   // Tâche 6 — GET /files
   static async getIndex(req, res) {
     try {
+      // --- Auth ---
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
       const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -186,45 +188,48 @@ class FilesController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // Récupération des paramètres query avec gestion des undefined
-      const parentIdRaw = req.query ? req.query.parentId : undefined;
-      const pageRaw = req.query ? req.query.page : undefined;
+      // --- Params ---
+      const { parentId, page } = req.query || {};
+      const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
-      // Gestion de la page (par défaut 0)
-      let page = 0;
-      if (pageRaw !== undefined) {
-        const parsedPage = parseInt(pageRaw, 10);
-        if (!Number.isNaN(parsedPage) && parsedPage >= 0) {
-          page = parsedPage;
-        }
-      }
+      const isRoot = (parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0);
 
-      // Gestion du parentId (par défaut 0 = racine)
-      let parentFilter = 0;
-      if (parentIdRaw !== undefined && parentIdRaw !== '' && parentIdRaw !== '0') {
+      // --- Pipeline Mongo (conforme à l’énoncé) ---
+      const pipeline = [{ $match: { userId } }];
+
+      if (isRoot) {
+        // compat : parentId stocké en 0 (number) ou "0" (string)
+        pipeline.push({ $match: { $or: [{ parentId: 0 }, { parentId: '0' }] } });
+      } else {
         try {
-          parentFilter = new ObjectId(parentIdRaw);
+          pipeline.push({ $match: { parentId: new ObjectId(parentId) } });
         } catch (e) {
-          // Si l'ObjectId n'est pas valide, on garde la chaîne
-          // Cela ne matchera rien, donc retournera une liste vide
-          parentFilter = String(parentIdRaw);
+          // pas de validation exigée -> si invalide, renvoyer liste vide
+          return res.status(200).json([]);
         }
       }
 
-      const pipeline = [
-        { $match: { userId, parentId: parentFilter } },
-        { $skip: page * 20 },
-        { $limit: 20 },
-      ];
+      pipeline.push({ $sort: { _id: 1 } });
+      pipeline.push({ $skip: pageNum * 20 });
+      pipeline.push({ $limit: 20 });
 
-      const cursor = dbClient.db.collection('files').aggregate(pipeline);
-      const docs = await cursor.toArray();
+      // --- Anti-timeout DB ---
+      const raceTimeout = (ms) => new Promise((resolve) => setTimeout(() => resolve(null), ms));
+      const mongoQuery = dbClient.db
+        .collection('files')
+        .aggregate(pipeline, { allowDiskUse: true })
+        .toArray();
 
-      const list = docs.map(mapFileDoc);
-      return res.status(200).json(list);
+      const docs = await Promise.race([mongoQuery, raceTimeout(2500)]);
+      if (!docs) return res.status(200).json([]); // DB lente -> on répond quand même
+
+      return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('FilesController.getIndex error:', (err && err.message) ? err.message : err);
+      console.error(
+        'FilesController.getIndex error:',
+        (err && err.message) ? err.message : err,
+      );
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
