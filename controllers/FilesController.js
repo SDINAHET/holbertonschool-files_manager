@@ -137,42 +137,52 @@ class FilesController {
     }
   }
 
-  // Tâche 6 — GET /files
+  // --- GET /files
   static async getIndex(req, res) {
     try {
+      if (!redisClient.isAlive()) return res.status(401).json({ error: 'Unauthorized' });
+      if (!dbClient.isAlive()) return res.status(500).json({ error: 'Internal Server Error' });
+
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
       const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try { userId = new ObjectId(userIdStr); } catch (_) {
+      try { userId = new ObjectId(userIdStr); } catch (e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { parentId, page } = req.query || {};
       const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
-      const query = { userId };
-      const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
+      const isRoot = parentId === undefined
+        || parentId === null
+        || parentId === ''
+        || parentId === '0'
+        || parentId === 0;
 
-      if (isRoot) {
-        query.parentId = { $in: [0, '0'] }; // DB de test mélange 0 et "0"
-      } else {
-        try {
-          query.parentId = new ObjectId(parentId);
-        } catch (_) {
-          return res.status(200).json([]); // parentId invalide => liste vide (spécification)
-        }
-      }
+      const matchStages = isRoot
+        ? [{ $match: { $or: [{ parentId: 0 }, { parentId: '0' }] } }]
+        : (() => {
+          try {
+            return [{ $match: { parentId: new ObjectId(parentId) } }];
+          } catch (e) {
+            // parentId invalide -> aucune correspondance => liste vide
+            return [{ $match: { _id: { $exists: false } } }];
+          }
+        })();
 
-      const docs = await dbClient.db.collection('files')
-        .find(query)
-        .sort({ _id: 1 })
-        .skip(pageNum * 20)
-        .limit(20)
-        .toArray();
+      const pipeline = [
+        { $match: { userId } },
+        ...matchStages,
+        { $sort: { _id: 1 } },
+        { $skip: pageNum * 20 },
+        { $limit: 20 },
+      ];
 
+      const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
       return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -181,26 +191,27 @@ class FilesController {
     }
   }
 
-  // Tâche 6 — GET /files/:id
+  // --- GET /files/:id
   static async getShow(req, res) {
     try {
+      // Garde anti-timeout: si Redis down, on coupe court
+      if (!redisClient.isAlive()) return res.status(401).json({ error: 'Unauthorized' });
+      if (!dbClient.isAlive()) return res.status(500).json({ error: 'Internal Server Error' });
+
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
       const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
+      try { userId = new ObjectId(userIdStr); } catch (e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { id } = req.params;
       let fileId;
-      try {
-        fileId = new ObjectId(id);
-      } catch (e) {
+      try { fileId = new ObjectId(id); } catch (e) {
         return res.status(404).json({ error: 'Not found' });
       }
 
@@ -210,7 +221,7 @@ class FilesController {
       return res.status(200).json(mapFileDoc(doc));
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('FilesController.getShow error:', (err && err.message) ? err.message : err);
+      console.error('FilesController.getShow error:', err && err.message ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
