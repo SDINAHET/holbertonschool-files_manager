@@ -138,9 +138,10 @@ class FilesController {
   }
 
   // Tâche 6 — GET /files/:id
+  // Tâche 6 — GET /files
   static async getIndex(req, res) {
     try {
-      // --- Auth ---
+      // Auth
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -154,42 +155,41 @@ class FilesController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // --- Params ---
+      // Params (page 0-based)
       const { parentId, page } = req.query || {};
       const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
+      // Construire le filtre
+      const query = { userId };
       const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
-      // --- Pipeline d'agrégation (attendu par l'énoncé) ---
-      const matchStages = [{ $match: { userId } }];
 
       if (isRoot) {
-        // ⚠️ la base de tests mélange parentId: 0 (number) et "0" (string)
-        matchStages.push({ $match: { $or: [{ parentId: 0 }, { parentId: '0' }] } });
+        // Racine : certains docs ont 0 (number), d'autres "0" (string)
+        query.parentId = { $in: [0, '0'] };
       } else {
         try {
-          matchStages.push({ $match: { parentId: new ObjectId(parentId) } });
+          query.parentId = new ObjectId(parentId);
         } catch (e) {
-          // parentId invalide -> liste vide (aucune validation requise)
+          // parentId invalide -> liste vide (pas de validation demandée)
           return res.status(200).json([]);
         }
       }
 
-      const pipeline = [
-        ...matchStages,
-        { $sort: { _id: 1 } },
-        { $skip: pageNum * 20 },
-        { $limit: 20 },
-      ];
-
-      const docs = await dbClient.db
-        .collection('files')
-        .aggregate(pipeline, { allowDiskUse: true }) // évite les blocages
+      // Requête simple + pagination
+      const docs = await dbClient.db.collection('files')
+        .find(query)
+        .sort({ _id: 1 })
+        .skip(pageNum * 20)
+        .limit(20)
         .toArray();
 
       return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
-      // pas de optional chaining pour ESLint
-      console.error('FilesController.getIndex error:', (err && err.message) ? err.message : err);
+      // pas d'optional chaining, et on coupe pour max-len
+      console.error(
+        'FilesController.getIndex error:',
+        (err && err.message) ? err.message : err,
+      );
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
