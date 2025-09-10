@@ -68,8 +68,13 @@ class FilesController {
 
       if (type === 'folder') {
         const doc = {
-          userId, name, type, isPublic: Boolean(isPublic), parentId: parentRef === 0 ? 0 : parentRef,
+          userId,
+          name,
+          type,
+          isPublic: Boolean(isPublic),
+          parentId: parentRef === 0 ? 0 : parentRef,
         };
+
         const result = await dbClient.db.collection('files').insertOne(doc);
         return res.status(201).json({
           id: result.insertedId.toString(),
@@ -123,16 +128,16 @@ class FilesController {
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-      // petit timeout pour éviter de rester bloqué si Redis met du temps
+      // Timeout court pour éviter de rester bloqué si Redis tarde
       const userIdStr = await Promise.race([
         redisClient.get(`auth_${token}`),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('auth timeout')), 2000)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('auth-timeout')), 2000)),
       ]).catch(() => null);
 
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try { userId = new mongodb.ObjectId(userIdStr); } catch (e) {
+      try { userId = new ObjectId(userIdStr); } catch (_) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
@@ -141,11 +146,10 @@ class FilesController {
 
       const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
 
-      // Spécification: pas de validation de parentId.
-      // Racine: on couvre 0, "0" et l'absence de champ dans certains datasets.
+      // Spécification: pas de validation de parentId
       const matchByParent = isRoot
         ? { $or: [{ parentId: 0 }, { parentId: '0' }, { parentId: { $exists: false } }] }
-        : { parentId: (() => { try { return new mongodb.ObjectId(parentId); } catch (e) { return parentId; } })() };
+        : { parentId: ObjectId.isValid(parentId) ? new ObjectId(parentId) : parentId };
 
       const pipeline = [
         { $match: { userId } },
@@ -156,6 +160,7 @@ class FilesController {
       ];
 
       const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
+
       return res.status(200).json(docs.map((doc) => ({
         id: doc._id.toString(),
         userId: doc.userId.toString(),
