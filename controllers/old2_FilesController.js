@@ -177,21 +177,11 @@ class FilesController {
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-      // Fail-fast Redis get with timeout (e.g., 2s)
-      const getWithTimeout = (key, ms = 2000) => (
-        Promise.race([
-          redisClient.get(key),
-          new Promise((resolve) => setTimeout(() => resolve(null), ms)),
-        ])
-      );
-
-      const userIdStr = await getWithTimeout(`auth_${token}`);
+      const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
+      try { userId = new ObjectId(userIdStr); } catch (e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
@@ -199,13 +189,7 @@ class FilesController {
       const { parentId, page } = req.query || {};
       const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
-      const isRoot = (
-        parentId === undefined
-        || parentId === null
-        || parentId === ''
-        || parentId === '0'
-        || parentId === 0
-      );
+      const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
 
       let parentFilter;
       if (isRoot) {
@@ -214,35 +198,44 @@ class FilesController {
         try {
           parentFilter = new ObjectId(parentId);
         } catch (e) {
-          // Spec: no validation → keep string so it returns [] if it doesn't match
+          // Spec says: no validation needed; use as-is so it returns [] if it doesn't match
           parentFilter = String(parentId);
         }
       }
 
-      // 3) Query with pagination (20 per page)
-      const query = { userId, parentId: parentFilter };
-      const docs = await dbClient.db
-        .collection('files')
-        .find(query)
-        .sort({ _id: 1 })
-        .skip(pageNum * 20)
-        .limit(20)
-        .toArray();
+      // 3) Aggregate with pagination (exactly as the task suggests)
+      const pipeline = [
+        { $match: { userId, parentId: parentFilter } },
+        { $sort: { _id: 1 } }, // stable order
+        { $skip: pageNum * 20 },
+        { $limit: 20 },
+        {
+          $project: {
+            _id: 1,
+            userId: 1,
+            name: 1,
+            type: 1,
+            isPublic: 1,
+            parentId: 1,
+          },
+        },
+      ];
 
-      // 4) Normalize
-      const list = docs.map((d) => ({
-        id: d._id.toString(),
-        userId: d.userId.toString(),
-        name: d.name,
-        type: d.type,
-        isPublic: d.isPublic === true,
-        parentId:
-          d.parentId && d.parentId !== 0 && d.parentId !== '0'
-            ? d.parentId.toString()
-            : 0,
-      }));
+      const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
 
-      return res.status(200).json(list);
+      return res.status(200).json(
+        docs.map((d) => ({
+          id: d._id.toString(),
+          userId: d.userId.toString(),
+          name: d.name,
+          type: d.type,
+          isPublic: d.isPublic === true,
+          parentId:
+            d.parentId && d.parentId !== 0 && d.parentId !== '0'
+              ? d.parentId.toString()
+              : 0,
+        })),
+      );
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('FilesController.getIndex error:', err && err.message ? err.message : err);
