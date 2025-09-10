@@ -117,45 +117,53 @@ class FilesController {
   }
 
   // GET /files — liste par parentId + pagination, sans "valider" parentId
+  // --- GET /files
   static async getIndex(req, res) {
     try {
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
-      const userIdStr = await redisClient.get(`auth_${token}`);
+
+      // petit timeout pour éviter de rester bloqué si Redis met du temps
+      const userIdStr = await Promise.race([
+        redisClient.get(`auth_${token}`),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('auth timeout')), 2000)),
+      ]).catch(() => null);
+
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
+      try { userId = new mongodb.ObjectId(userIdStr); } catch (e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { parentId, page } = req.query || {};
       const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
-      const isRoot = parentId === undefined
-        || parentId === null
-        || parentId === ''
-        || parentId === '0'
-        || parentId === 0;
+      const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
 
-      // Spécification : pas de validation de parentId.
-      // Si parentId ne correspond à aucun dossier utilisateur -> liste vide naturellement.
+      // Spécification: pas de validation de parentId.
+      // Racine: on couvre 0, "0" et l'absence de champ dans certains datasets.
       const matchByParent = isRoot
-        ? [{ $match: { $or: [{ parentId: 0 }, { parentId: '0' }] } }]
-        : [{ $match: { parentId: (() => { try { return new ObjectId(parentId); } catch (e) { return parentId; } })() } }];
+        ? { $or: [{ parentId: 0 }, { parentId: '0' }, { parentId: { $exists: false } }] }
+        : { parentId: (() => { try { return new mongodb.ObjectId(parentId); } catch (e) { return parentId; } })() };
 
       const pipeline = [
         { $match: { userId } },
-        ...matchByParent,
+        { $match: matchByParent },
         { $sort: { _id: 1 } },
         { $skip: pageNum * 20 },
         { $limit: 20 },
       ];
 
       const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
-      return res.status(200).json(docs.map(mapFileDoc));
+      return res.status(200).json(docs.map((doc) => ({
+        id: doc._id.toString(),
+        userId: doc.userId.toString(),
+        name: doc.name,
+        type: doc.type,
+        isPublic: doc.isPublic === true,
+        parentId: (doc.parentId && doc.parentId !== 0 && doc.parentId !== '0') ? doc.parentId.toString() : 0,
+      })));
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('FilesController.getIndex error:', err && err.message ? err.message : err);
