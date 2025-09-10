@@ -160,8 +160,11 @@ class FilesController {
 
       // Construire le filtre attendu par le checker
       const query = { userId };
-      if (parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0) {
-        query.parentId = 0; // racine
+      const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
+
+      if (isRoot) {
+        // ⚠️ Certains docs ont parentId: 0 (number), d'autres "0" (string)
+        query.parentId = { $in: [0, '0'] };
       } else {
         try {
           query.parentId = new ObjectId(parentId);
