@@ -140,41 +140,32 @@ class FilesController {
   // Tâche 6 — GET /files
   static async getIndex(req, res) {
     try {
-      // --- Auth ---
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
-
       const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
+      try { userId = new ObjectId(userIdStr); } catch (_) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // --- Params ---
       const { parentId, page } = req.query || {};
       const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
-      // --- Filtre parent ---
-      const isRoot = (parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0);
-
       const query = { userId };
+      const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
+
       if (isRoot) {
-        // la DB des tests peut contenir 0 (number) OU "0" (string)
-        query.parentId = { $in: [0, '0'] };
+        query.parentId = { $in: [0, '0'] }; // DB de test mélange 0 et "0"
       } else {
         try {
           query.parentId = new ObjectId(parentId);
-        } catch (e) {
-          // parentId invalide -> retourne une liste vide (pas de validation demandée)
-          return res.status(200).json([]);
+        } catch (_) {
+          return res.status(200).json([]); // parentId invalide => liste vide (spécification)
         }
       }
 
-      // --- Pagination simple ---
       const docs = await dbClient.db.collection('files')
         .find(query)
         .sort({ _id: 1 })
@@ -184,9 +175,8 @@ class FilesController {
 
       return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
-      // coupe le message pour ESLint max-len
       // eslint-disable-next-line no-console
-      console.error('FilesController.getIndex error:', (err && err.message) ? err.message : err);
+      console.error('FilesController.getIndex error:', err && err.message ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
