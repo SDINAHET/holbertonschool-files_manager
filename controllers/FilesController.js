@@ -137,6 +137,60 @@ class FilesController {
     }
   }
 
+  // Tâche 6 — GET /files
+  static async getIndex(req, res) {
+    try {
+      // --- Auth ---
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+      const userIdStr = await redisClient.get(`auth_${token}`);
+      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+      let userId;
+      try {
+        userId = new ObjectId(userIdStr);
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // --- Params ---
+      const { parentId, page } = req.query || {};
+      const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
+
+      // --- Filtre parent ---
+      const isRoot = (parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0);
+
+      const query = { userId };
+      if (isRoot) {
+        // la DB des tests peut contenir 0 (number) OU "0" (string)
+        query.parentId = { $in: [0, '0'] };
+      } else {
+        try {
+          query.parentId = new ObjectId(parentId);
+        } catch (e) {
+          // parentId invalide -> retourne une liste vide (pas de validation demandée)
+          return res.status(200).json([]);
+        }
+      }
+
+      // --- Pagination simple ---
+      const docs = await dbClient.db.collection('files')
+        .find(query)
+        .sort({ _id: 1 })
+        .skip(pageNum * 20)
+        .limit(20)
+        .toArray();
+
+      return res.status(200).json(docs.map(mapFileDoc));
+    } catch (err) {
+      // coupe le message pour ESLint max-len
+      // eslint-disable-next-line no-console
+      console.error('FilesController.getIndex error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
   // Tâche 6 — GET /files/:id
   static async getShow(req, res) {
     try {
@@ -167,69 +221,6 @@ class FilesController {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('FilesController.getShow error:', (err && err.message) ? err.message : err);
-      return res.status(500).json({ error: 'Internal Server Error' });
-    }
-  }
-
-  // Tâche 6 — GET /files
-  static async getIndex(req, res) {
-    try {
-      // --- Auth ---
-      const token = req.header('X-Token');
-      if (!token) return res.status(401).json({ error: 'Unauthorized' });
-
-      const userIdStr = await redisClient.get(`auth_${token}`);
-      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
-
-      let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      // --- Params ---
-      const { parentId, page } = req.query || {};
-      const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
-
-      const isRoot = (parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0);
-
-      // --- Pipeline Mongo (conforme à l’énoncé) ---
-      const pipeline = [{ $match: { userId } }];
-
-      if (isRoot) {
-        // compat : parentId stocké en 0 (number) ou "0" (string)
-        pipeline.push({ $match: { $or: [{ parentId: 0 }, { parentId: '0' }] } });
-      } else {
-        try {
-          pipeline.push({ $match: { parentId: new ObjectId(parentId) } });
-        } catch (e) {
-          // pas de validation exigée -> si invalide, renvoyer liste vide
-          return res.status(200).json([]);
-        }
-      }
-
-      pipeline.push({ $sort: { _id: 1 } });
-      pipeline.push({ $skip: pageNum * 20 });
-      pipeline.push({ $limit: 20 });
-
-      // --- Anti-timeout DB ---
-      const raceTimeout = (ms) => new Promise((resolve) => setTimeout(() => resolve(null), ms));
-      const mongoQuery = dbClient.db
-        .collection('files')
-        .aggregate(pipeline, { allowDiskUse: true })
-        .toArray();
-
-      const docs = await Promise.race([mongoQuery, raceTimeout(2500)]);
-      if (!docs) return res.status(200).json([]); // DB lente -> on répond quand même
-
-      return res.status(200).json(docs.map(mapFileDoc));
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(
-        'FilesController.getIndex error:',
-        (err && err.message) ? err.message : err,
-      );
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
