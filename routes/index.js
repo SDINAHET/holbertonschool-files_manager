@@ -24,7 +24,6 @@ router.post('/files', FilesController.postUpload); // <-- add task5
 // Task 6
 router.get('/files', FilesController.getIndex); // <-- add task6
 router.get('/files/:id', FilesController.getShow); // <-- add task6
-// router.get('/files', FilesController.getIndex); // <-- add task6
 
 // Task 7
 router.put('/files/:id/publish', FilesController.putPublish); // <-- add task7
