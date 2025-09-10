@@ -177,11 +177,12 @@ class FilesController {
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-      // Fail-fast Redis get with timeout (e.g., 2s)
+      // Fail-fast helpers (timeouts)
+      const raceTimeout = (ms) => new Promise((resolve) => setTimeout(() => resolve(null), ms));
       const getWithTimeout = (key, ms = 2000) => (
         Promise.race([
           redisClient.get(key),
-          new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+          raceTimeout(ms),
         ])
       );
 
@@ -219,15 +220,23 @@ class FilesController {
         }
       }
 
-      // 3) Query with pagination (20 per page)
+      // 3) Query with pagination (20 per page) + DB timeout
       const query = { userId, parentId: parentFilter };
-      const docs = await dbClient.db
+      const mongoQuery = dbClient.db
         .collection('files')
         .find(query)
         .sort({ _id: 1 })
         .skip(pageNum * 20)
         .limit(20)
         .toArray();
+
+      const docs = await Promise.race([
+        mongoQuery,
+        raceTimeout(2500),
+      ]);
+
+      // If Mongo was slow → return empty list instead of timing out
+      if (!docs) return res.status(200).json([]);
 
       // 4) Normalize
       const list = docs.map((d) => ({
