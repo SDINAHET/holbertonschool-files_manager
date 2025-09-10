@@ -173,7 +173,6 @@ class FilesController {
 
   static async getIndex(req, res) {
     try {
-      // Auth
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -187,29 +186,25 @@ class FilesController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // Query params
       const { parentId, page } = req.query || {};
       const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
-      // Construire le filtre attendu par le checker
-      const query = { userId };
-      if (parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0) {
-        query.parentId = 0; // racine
-      } else {
+      let parentFilter = 0;
+      if (parentId && parentId !== '0' && parentId !== 0) {
         try {
-          query.parentId = new ObjectId(parentId);
+          parentFilter = new ObjectId(parentId);
         } catch (e) {
-          // parentId invalide → renvoyer []
-          return res.status(200).json([]);
+          parentFilter = '__no_match__'; // garantira []
         }
       }
 
-      // Requête simple et déterministe (pas d'aggregate)
       const docs = await dbClient.db.collection('files')
-        .find(query)
-        .sort({ _id: 1 })
-        .skip(pageNum * 20)
-        .limit(20)
+        .aggregate([
+          { $match: { userId, parentId: parentFilter } },
+          { $sort: { _id: 1 } },
+          { $skip: pageNum * 20 },
+          { $limit: 20 },
+        ])
         .toArray();
 
       return res.status(200).json(docs.map(mapFileDoc));
