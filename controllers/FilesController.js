@@ -144,7 +144,7 @@ class FilesController {
       // Si parentId ne correspond à aucun dossier utilisateur -> liste vide naturellement.
       const matchByParent = isRoot
         ? [{ $match: { $or: [{ parentId: 0 }, { parentId: '0' }] } }]
-        : [{ $match: { parentId: (() => { try { return new ObjectId(parentId); } catch { return parentId; } })() } }];
+        : [{ $match: { parentId: (() => { try { return new ObjectId(parentId); } catch (e) { return parentId; } })() } }];
 
       const pipeline = [
         { $match: { userId } },
