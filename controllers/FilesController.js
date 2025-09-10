@@ -141,7 +141,6 @@ class FilesController {
   // Tâche 6 — GET /files
   static async getIndex(req, res) {
     try {
-      // Auth
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -155,27 +154,24 @@ class FilesController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // Params (page 0-based)
+      // Récup params
       const { parentId, page } = req.query || {};
       const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
-      // Construire le filtre
+      // Filtre de base
       const query = { userId };
-      const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
 
-      if (isRoot) {
-        // Racine : certains docs ont 0 (number), d'autres "0" (string)
-        query.parentId = { $in: [0, '0'] };
+      if (!parentId || parentId === '0' || parentId === 0) {
+        query.parentId = 0; // ✅ Par défaut : racine
       } else {
         try {
           query.parentId = new ObjectId(parentId);
         } catch (e) {
-          // parentId invalide -> liste vide (pas de validation demandée)
-          return res.status(200).json([]);
+          return res.status(200).json([]); // parentId invalide → liste vide
         }
       }
 
-      // Requête simple + pagination
+      // Requête Mongo avec pagination
       const docs = await dbClient.db.collection('files')
         .find(query)
         .sort({ _id: 1 })
@@ -185,11 +181,8 @@ class FilesController {
 
       return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
-      // pas d'optional chaining, et on coupe pour max-len
-      console.error(
-        'FilesController.getIndex error:',
-        (err && err.message) ? err.message : err,
-      );
+      console.error('FilesController.getIndex error:',
+        (err && err.message) ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
