@@ -181,7 +181,7 @@ class FilesController {
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try { userId = new ObjectId(userIdStr); } catch {
+      try { userId = new ObjectId(userIdStr); } catch (e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
@@ -189,8 +189,7 @@ class FilesController {
       const { parentId, page } = req.query || {};
       const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
-      const isRoot =
-        parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
+      const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
 
       let parentFilter;
       if (isRoot) {
@@ -198,7 +197,7 @@ class FilesController {
       } else {
         try {
           parentFilter = new ObjectId(parentId);
-        } catch {
+        } catch (e) {
           // Spec says: no validation needed; use as-is so it returns [] if it doesn't match
           parentFilter = String(parentId);
         }
@@ -207,7 +206,7 @@ class FilesController {
       // 3) Aggregate with pagination (exactly as the task suggests)
       const pipeline = [
         { $match: { userId, parentId: parentFilter } },
-        { $sort: { _id: 1 } },               // stable order
+        { $sort: { _id: 1 } }, // stable order
         { $skip: pageNum * 20 },
         { $limit: 20 },
         {
@@ -243,7 +242,6 @@ class FilesController {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
-
 
   // Tâche 7 — PUT /files/:id/publish
   static async putPublish(req, res) {
