@@ -219,7 +219,7 @@ class FilesController {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
-  
+
   // Tâche 7 — PUT /files/:id/publish
   static async putPublish(req, res) {
     try {

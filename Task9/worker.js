@@ -1,9 +1,8 @@
 import Bull from 'bull';
 import imageThumbnail from 'image-thumbnail';
 import { promises as fs } from 'fs';
-import path from 'path';
 import mongodb from 'mongodb';
-import dbClient from './utils/db.mjs';
+import dbClient from './utils/db.js';
 
 const { ObjectId } = mongodb;
 
@@ -23,13 +22,14 @@ fileQueue.process('generateThumbnails', async (job) => {
   if (!fileId) {
     throw new Error('Missing fileId');
   }
-  
+
   if (!userId) {
     throw new Error('Missing userId');
   }
 
   // Convert strings to ObjectId
-  let fileObjectId, userObjectId;
+  let fileObjectId; let
+    userObjectId;
   try {
     fileObjectId = new ObjectId(fileId);
     userObjectId = new ObjectId(userId);
@@ -56,24 +56,19 @@ fileQueue.process('generateThumbnails', async (job) => {
 
   // Generate thumbnails for different sizes
   const sizes = [500, 250, 100];
-  
+
   try {
     // Read the original file
     const originalImage = await fs.readFile(file.localPath);
-    
-    // Generate each thumbnail size
-    for (const size of sizes) {
+
+    // Generate all thumbnails in parallel
+    await Promise.all(sizes.map(async (size) => {
       const thumbnail = await imageThumbnail(originalImage, { width: size });
-      
-      // Create the thumbnail filename
       const thumbnailPath = `${file.localPath}_${size}`;
-      
-      // Save the thumbnail
       await fs.writeFile(thumbnailPath, thumbnail);
-      
       console.log(`Generated thumbnail: ${thumbnailPath}`);
-    }
-    
+    }));
+
     console.log(`Successfully generated thumbnails for file ${fileId}`);
   } catch (error) {
     console.error(`Error generating thumbnails for file ${fileId}:`, error);

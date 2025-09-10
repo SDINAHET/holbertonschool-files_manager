@@ -6,7 +6,7 @@ import mimeTypes from 'mime-types';
 import mongodb from 'mongodb';
 import redisClient from '../utils/redis';
 import dbClient from '../utils/db';
-import fileQueue from '../utils/queue';
+import fileQueue from '../utils/queue.js';
 
 const { ObjectId } = mongodb;
 const VALID_TYPES = new Set(['folder', 'file', 'image']);

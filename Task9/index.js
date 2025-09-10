@@ -1,8 +1,8 @@
 import express from 'express';
-import FilesController from './FilesController.js';
-import AuthController from '../controllers/AuthController.js';
-import UsersController from '../controllers/UsersController.js';
-import AppController from '../controllers/AppController.js';
+import FilesController from './FilesController.js'; // Ensure .js extension
+import AuthController from '../controllers/AuthController.js'; // Ensure .js extension
+import UsersController from '../controllers/UsersController.js'; // Ensure .js extension
+import AppController from '../controllers/AppController.js'; // Ensure .js extension
 
 const router = express.Router();
 

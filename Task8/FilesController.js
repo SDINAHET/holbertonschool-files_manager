@@ -190,7 +190,7 @@ class FilesController {
       // Récupération des paramètres query avec gestion des undefined
       const parentIdRaw = req.query ? req.query.parentId : undefined;
       const pageRaw = req.query ? req.query.page : undefined;
-      
+
       // Gestion de la page (par défaut 0)
       let page = 0;
       if (pageRaw !== undefined) {
