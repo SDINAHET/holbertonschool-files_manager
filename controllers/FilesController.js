@@ -173,20 +173,10 @@ class FilesController {
 
   static async getIndex(req, res) {
     try {
-      // 1) Auth
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-      // Fail-fast helpers (timeouts)
-      const raceTimeout = (ms) => new Promise((resolve) => setTimeout(() => resolve(null), ms));
-      const getWithTimeout = (key, ms = 2000) => (
-        Promise.race([
-          redisClient.get(key),
-          raceTimeout(ms),
-        ])
-      );
-
-      const userIdStr = await getWithTimeout(`auth_${token}`);
+      const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
@@ -196,65 +186,30 @@ class FilesController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // 2) Query params
       const { parentId, page } = req.query || {};
       const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
 
-      const isRoot = (
-        parentId === undefined
-        || parentId === null
-        || parentId === ''
-        || parentId === '0'
-        || parentId === 0
-      );
-
-      let parentFilter;
-      if (isRoot) {
-        parentFilter = 0;
-      } else {
+      let parentFilter = 0;
+      if (parentId && parentId !== '0' && parentId !== 0) {
         try {
           parentFilter = new ObjectId(parentId);
         } catch (e) {
-          // Spec: no validation → keep string so it returns [] if it doesn't match
-          parentFilter = String(parentId);
+          parentFilter = '__no_match__'; // garantira []
         }
       }
 
-      // 3) Query with pagination (20 per page) + DB timeout
-      const query = { userId, parentId: parentFilter };
-      const mongoQuery = dbClient.db
-        .collection('files')
-        .find(query)
-        .sort({ _id: 1 })
-        .skip(pageNum * 20)
-        .limit(20)
+      const docs = await dbClient.db.collection('files')
+        .aggregate([
+          { $match: { userId, parentId: parentFilter } },
+          { $sort: { _id: 1 } },
+          { $skip: pageNum * 20 },
+          { $limit: 20 },
+        ])
         .toArray();
 
-      const docs = await Promise.race([
-        mongoQuery,
-        raceTimeout(2500),
-      ]);
-
-      // If Mongo was slow → return empty list instead of timing out
-      if (!docs) return res.status(200).json([]);
-
-      // 4) Normalize
-      const list = docs.map((d) => ({
-        id: d._id.toString(),
-        userId: d.userId.toString(),
-        name: d.name,
-        type: d.type,
-        isPublic: d.isPublic === true,
-        parentId:
-          d.parentId && d.parentId !== 0 && d.parentId !== '0'
-            ? d.parentId.toString()
-            : 0,
-      }));
-
-      return res.status(200).json(list);
+      return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('FilesController.getIndex error:', err && err.message ? err.message : err);
+      console.error('FilesController.getIndex error:', (err && err.message) ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
