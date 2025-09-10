@@ -138,39 +138,6 @@ class FilesController {
   }
 
   // Tâche 6 — GET /files/:id
-  static async getShow(req, res) {
-    try {
-      const token = req.header('X-Token');
-      if (!token) return res.status(401).json({ error: 'Unauthorized' });
-      const userIdStr = await redisClient.get(`auth_${token}`);
-      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
-
-      let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      const { id } = req.params;
-      let fileId;
-      try {
-        fileId = new ObjectId(id);
-      } catch (e) {
-        return res.status(404).json({ error: 'Not found' });
-      }
-
-      const doc = await dbClient.db.collection('files').findOne({ _id: fileId, userId });
-      if (!doc) return res.status(404).json({ error: 'Not found' });
-
-      return res.status(200).json(mapFileDoc(doc));
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('FilesController.getShow error:', (err && err.message) ? err.message : err);
-      return res.status(500).json({ error: 'Internal Server Error' });
-    }
-  }
-
   static async getIndex(req, res) {
     try {
       // Auth
@@ -215,6 +182,39 @@ class FilesController {
       return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
       console.error('FilesController.getIndex error:', (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
+  static async getShow(req, res) {
+    try {
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+      const userIdStr = await redisClient.get(`auth_${token}`);
+      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+      let userId;
+      try {
+        userId = new ObjectId(userIdStr);
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { id } = req.params;
+      let fileId;
+      try {
+        fileId = new ObjectId(id);
+      } catch (e) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const doc = await dbClient.db.collection('files').findOne({ _id: fileId, userId });
+      if (!doc) return res.status(404).json({ error: 'Not found' });
+
+      return res.status(200).json(mapFileDoc(doc));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('FilesController.getShow error:', (err && err.message) ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
