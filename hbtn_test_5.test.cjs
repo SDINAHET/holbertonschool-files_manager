@@ -2,7 +2,8 @@
 /* eslint-disable jest/lowercase-name, jest/no-standalone-expect, jest/valid-expect, jest/prefer-expect-assertions, func-names, no-await-in-loop */
 const { expect } = require('chai');
 
-const BASE = 'http://0.0.0.0:5000';
+// const BASE = 'http://0.0.0.0:5000';
+const BASE = 'http://127.0.0.1:5000';
 
 // Helpers
 async function httpJson(url, opts = {}) {

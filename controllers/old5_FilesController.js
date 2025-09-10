@@ -9,6 +9,7 @@ import dbClient from '../utils/db';
 const { ObjectId } = mongodb;
 const VALID_TYPES = new Set(['folder', 'file', 'image']);
 
+// Formate les documents renvoyés par l'API
 function mapFileDoc(doc) {
   return {
     id: doc._id.toString(),
@@ -26,6 +27,7 @@ function mapFileDoc(doc) {
 class FilesController {
   static async postUpload(req, res) {
     try {
+      // 1) Auth via X-Token -> userId en Redis
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
       const userIdStr = await redisClient.get(`auth_${token}`);
@@ -38,8 +40,13 @@ class FilesController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
+      // 2) Inputs
       const {
-        name, type, parentId = 0, isPublic = false, data,
+        name,
+        type,
+        parentId = 0,
+        isPublic = false,
+        data,
       } = req.body || {};
 
       if (!name) return res.status(400).json({ error: 'Missing name' });
@@ -50,6 +57,7 @@ class FilesController {
         return res.status(400).json({ error: 'Missing data' });
       }
 
+      // 3) parentId validations
       let parentRef = 0;
       if (parentId && parentId !== 0 && parentId !== '0') {
         let parentObjId;
@@ -58,6 +66,7 @@ class FilesController {
         } catch (e) {
           return res.status(400).json({ error: 'Parent not found' });
         }
+
         const parentDoc = await dbClient.db.collection('files').findOne({ _id: parentObjId });
         if (!parentDoc) return res.status(400).json({ error: 'Parent not found' });
         if (parentDoc.type !== 'folder') {
@@ -66,10 +75,16 @@ class FilesController {
         parentRef = parentObjId;
       }
 
+      // 4) Si dossier -> insert direct
       if (type === 'folder') {
         const doc = {
-          userId, name, type, isPublic: Boolean(isPublic), parentId: parentRef === 0 ? 0 : parentRef,
+          userId,
+          name,
+          type,
+          isPublic: Boolean(isPublic),
+          parentId: parentRef === 0 ? 0 : parentRef,
         };
+
         const result = await dbClient.db.collection('files').insertOne(doc);
         return res.status(201).json({
           id: result.insertedId.toString(),
@@ -81,13 +96,18 @@ class FilesController {
         });
       }
 
-      const folderPath = (process.env.FOLDER_PATH && process.env.FOLDER_PATH.trim())
+      // 5) Sinon (file|image) -> écrire en disque puis insert
+      const folderPath = process.env.FOLDER_PATH && process.env.FOLDER_PATH.trim()
         ? process.env.FOLDER_PATH.trim()
         : '/tmp/files_manager';
+
+      // Crée le dossier si absent
       await fs.mkdir(folderPath, { recursive: true });
 
       const localName = uuidv4();
       const localPath = path.join(folderPath, localName);
+
+      // data est en Base64 → écrire en clair
       const fileBuffer = Buffer.from(data, 'base64');
       await fs.writeFile(localPath, fileBuffer);
 
@@ -99,6 +119,7 @@ class FilesController {
         parentId: parentRef === 0 ? 0 : parentRef,
         localPath,
       };
+
       const result = await dbClient.db.collection('files').insertOne(doc);
 
       return res.status(201).json({
@@ -111,23 +132,25 @@ class FilesController {
       });
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('FilesController.postUpload error:', err && err.message ? err.message : err);
+      console.error('FilesController.postUpload error:', (err && err.message) ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
 
-  // GET /files — liste par parentId + pagination, sans "valider" parentId
+  // --- GET /files
   static async getIndex(req, res) {
     try {
+      if (!redisClient.isAlive()) return res.status(401).json({ error: 'Unauthorized' });
+      if (!dbClient.isAlive()) return res.status(500).json({ error: 'Internal Server Error' });
+
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
       const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
+      try { userId = new ObjectId(userIdStr); } catch (e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
@@ -140,15 +163,20 @@ class FilesController {
         || parentId === '0'
         || parentId === 0;
 
-      // Spécification : pas de validation de parentId.
-      // Si parentId ne correspond à aucun dossier utilisateur -> liste vide naturellement.
-      const matchByParent = isRoot
+      const matchStages = isRoot
         ? [{ $match: { $or: [{ parentId: 0 }, { parentId: '0' }] } }]
-        : [{ $match: { parentId: (() => { try { return new ObjectId(parentId); } catch { return parentId; } })() } }];
+        : (() => {
+          try {
+            return [{ $match: { parentId: new ObjectId(parentId) } }];
+          } catch (e) {
+            // parentId invalide -> aucune correspondance => liste vide
+            return [{ $match: { _id: { $exists: false } } }];
+          }
+        })();
 
       const pipeline = [
         { $match: { userId } },
-        ...matchByParent,
+        ...matchStages,
         { $sort: { _id: 1 } },
         { $skip: pageNum * 20 },
         { $limit: 20 },
@@ -163,26 +191,27 @@ class FilesController {
     }
   }
 
-  // GET /files/:id — fichier d’un utilisateur par id
+  // --- GET /files/:id
   static async getShow(req, res) {
     try {
+      // Garde anti-timeout: si Redis down, on coupe court
+      if (!redisClient.isAlive()) return res.status(401).json({ error: 'Unauthorized' });
+      if (!dbClient.isAlive()) return res.status(500).json({ error: 'Internal Server Error' });
+
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
       const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
+      try { userId = new ObjectId(userIdStr); } catch (e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { id } = req.params;
       let fileId;
-      try {
-        fileId = new ObjectId(id);
-      } catch (e) {
+      try { fileId = new ObjectId(id); } catch (e) {
         return res.status(404).json({ error: 'Not found' });
       }
 
@@ -197,10 +226,12 @@ class FilesController {
     }
   }
 
+  // Tâche 7 — PUT /files/:id/publish
   static async putPublish(req, res) {
     try {
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
       const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -225,18 +256,21 @@ class FilesController {
 
       await filesCol.updateOne({ _id: fileId }, { $set: { isPublic: true } });
       const updated = await filesCol.findOne({ _id: fileId });
+
       return res.status(200).json(mapFileDoc(updated));
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('FilesController.putPublish error:', err && err.message ? err.message : err);
+      console.error('FilesController.putPublish error:', (err && err.message) ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
 
+  // Tâche 7 — PUT /files/:id/unpublish
   static async putUnpublish(req, res) {
     try {
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
       const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -261,10 +295,11 @@ class FilesController {
 
       await filesCol.updateOne({ _id: fileId }, { $set: { isPublic: false } });
       const updated = await filesCol.findOne({ _id: fileId });
+
       return res.status(200).json(mapFileDoc(updated));
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('FilesController.putUnpublish error:', err && err.message ? err.message : err);
+      console.error('FilesController.putUnpublish error:', (err && err.message) ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
