@@ -171,6 +171,56 @@ class FilesController {
     }
   }
 
+  // Tâche 6 — GET /files
+  // static async getIndex(req, res) {
+  //   try {
+  //     // 1) Auth
+  //     const token = req.header('X-Token');
+  //     if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  //     const userIdStr = await redisClient.get(`auth_${token}`);
+  //     if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+  //     let userId;
+  //     try {
+  //       userId = new ObjectId(userIdStr);
+  //     } catch (e) {
+  //       return res.status(401).json({ error: 'Unauthorized' });
+  //     }
+
+  //     const { parentId: parentIdRaw = 0, page: pageRaw = '0' } = req.query || {};
+  //     const page = Number.isNaN(parseInt(pageRaw, 10)) ? 0 : Math.max(0, parseInt(pageRaw, 10));
+
+  //     let parentFilter;
+  //     if (parentIdRaw === 0 || parentIdRaw === '0' || parentIdRaw === undefined) {
+  //       parentFilter = 0;
+  //     } else {
+  //       // Pas de validation obligatoire : si non convertible en ObjectId,
+  //       //  on garde tel quel (ne matchera rien si parent est un ObjectId)
+  //       try {
+  //         parentFilter = new ObjectId(parentIdRaw);
+  //       } catch (e) {
+  //         parentFilter = String(parentIdRaw);
+  //       }
+  //     }
+
+  //     const pipeline = [
+  //       { $match: { userId, parentId: parentFilter } },
+  //       { $skip: page * 20 },
+  //       { $limit: 20 },
+  //     ];
+
+  //     const cursor = dbClient.db.collection('files').aggregate(pipeline);
+  //     const docs = await cursor.toArray();
+
+  //     const list = docs.map(mapFileDoc);
+  //     return res.status(200).json(list);
+  //   } catch (err) {
+  //     // eslint-disable-next-line no-console
+  //     console.error('FilesController.getIndex error:', (err && err.message) ? err.message : err);
+  //     return res.status(500).json({ error: 'Internal Server Error' });
+  //   }
+  // }
+  // controllers/FilesController.js
   static async getIndex(req, res) {
     try {
       // 1) Auth
