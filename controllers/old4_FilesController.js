@@ -138,6 +138,55 @@ class FilesController {
   }
 
   // Tâche 6 — GET /files/:id
+  // Tâche 6 — GET /files
+  static async getIndex(req, res) {
+    try {
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+      const userIdStr = await redisClient.get(`auth_${token}`);
+      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+      let userId;
+      try {
+        userId = new ObjectId(userIdStr);
+      } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // Récup params
+      const { parentId, page } = req.query || {};
+      const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
+
+      // Filtre de base
+      const query = { userId };
+
+      if (!parentId || parentId === '0' || parentId === 0) {
+        query.parentId = 0; // ✅ Par défaut : racine
+      } else {
+        try {
+          query.parentId = new ObjectId(parentId);
+        } catch (e) {
+          return res.status(200).json([]); // parentId invalide → liste vide
+        }
+      }
+
+      // Requête Mongo avec pagination
+      const docs = await dbClient.db.collection('files')
+        .find(query)
+        .sort({ _id: 1 })
+        .skip(pageNum * 20)
+        .limit(20)
+        .toArray();
+
+      return res.status(200).json(docs.map(mapFileDoc));
+    } catch (err) {
+      console.error('FilesController.getIndex error:',
+        (err && err.message) ? err.message : err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
   static async getShow(req, res) {
     try {
       const token = req.header('X-Token');
@@ -167,64 +216,6 @@ class FilesController {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('FilesController.getShow error:', (err && err.message) ? err.message : err);
-      return res.status(500).json({ error: 'Internal Server Error' });
-    }
-  }
-
-  // Tâche 6 — GET /files
-  static async getIndex(req, res) {
-    try {
-      const token = req.header('X-Token');
-      if (!token) return res.status(401).json({ error: 'Unauthorized' });
-      const userIdStr = await redisClient.get(`auth_${token}`);
-      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
-
-      let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      // Récupération des paramètres query avec gestion des undefined
-      const parentIdRaw = req.query ? req.query.parentId : undefined;
-      const pageRaw = req.query ? req.query.page : undefined;
-
-      // Gestion de la page (par défaut 0)
-      let page = 0;
-      if (pageRaw !== undefined) {
-        const parsedPage = parseInt(pageRaw, 10);
-        if (!Number.isNaN(parsedPage) && parsedPage >= 0) {
-          page = parsedPage;
-        }
-      }
-
-      // Gestion du parentId (par défaut 0 = racine)
-      let parentFilter = 0;
-      if (parentIdRaw !== undefined && parentIdRaw !== '' && parentIdRaw !== '0') {
-        try {
-          parentFilter = new ObjectId(parentIdRaw);
-        } catch (e) {
-          // Si l'ObjectId n'est pas valide, on garde la chaîne
-          // Cela ne matchera rien, donc retournera une liste vide
-          parentFilter = String(parentIdRaw);
-        }
-      }
-
-      const pipeline = [
-        { $match: { userId, parentId: parentFilter } },
-        { $skip: page * 20 },
-        { $limit: 20 },
-      ];
-
-      const cursor = dbClient.db.collection('files').aggregate(pipeline);
-      const docs = await cursor.toArray();
-
-      const list = docs.map(mapFileDoc);
-      return res.status(200).json(list);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('FilesController.getIndex error:', (err && err.message) ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
