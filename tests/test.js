@@ -1,30 +1,27 @@
 // tests/test.js
 /* eslint-disable no-unused-expressions */
-require('@babel/register'); // enable ES module import in project files
+require('@babel/register'); // allow ES imports if used in the project
 
 const { expect } = require('chai');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const redisMock = require('redis-mock');
 const proxyquire = require('proxyquire');
-const path = require('path');
-const fs = require('fs');
+const redisMock = require('redis-mock');
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 
 let app;
-let dbClient;      // actual instance loaded by the app
-let redisClient;   // actual instance loaded by the app (with redis mocked)
+let dbClient;    // utils/db* loaded instance
+let redisClient; // utils/redis* loaded instance (with redis mocked)
 let mongod;
 
-/* ------------------------------ Helpers ------------------------------ */
+/* ------------------------------ helpers ------------------------------ */
 
-// Base64
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
 const b64data = (s) => Buffer.from(s, 'utf8').toString('base64');
 
-/**
- * Recursively find first file matching regex under a root directory.
- */
+/** DFS search for first file matching regex under rootDir */
 function findFirstMatch(rootDir, regex) {
   const stack = [rootDir];
   while (stack.length) {
@@ -32,133 +29,78 @@ function findFirstMatch(rootDir, regex) {
     let entries = [];
     try {
       entries = fs.readdirSync(cur, { withFileTypes: true });
-    } catch (e) { /* ignore unreadable dirs */ }
+    } catch (e) { /* skip */ }
     for (let i = 0; i < entries.length; i += 1) {
       const ent = entries[i];
       const full = path.join(cur, ent.name);
-      if (ent.isDirectory()) {
-        stack.push(full);
-      } else if (ent.isFile() && regex.test(full)) {
-        return full;
-      }
+      if (ent.isDirectory()) stack.push(full);
+      else if (ent.isFile() && regex.test(full)) return full;
     }
   }
   return null;
 }
 
-/**
- * Try requiring server/app and return exported Express app if any.
- * Redis is mocked globally via proxyquire when we require these entry files.
- */
-function tryLoadExportedApp() {
-  const candidates = ['../server.js', '../server', '../app.js', '../app'];
-  for (let i = 0; i < candidates.length; i += 1) {
-    try {
-      // Stub the 'redis' package everywhere this module graph requires it
-      // eslint-disable-next-line import/no-dynamic-require, global-require
-      const mod = proxyquire(candidates[i], { redis: redisMock });
-      const maybeApp = (mod && mod.default) ? mod.default : mod;
-      if (maybeApp && typeof maybeApp === 'function' && typeof maybeApp.use === 'function') {
-        return maybeApp; // looks like an Express app
-      }
-    } catch (e) {
-      // try next candidate
-    }
-  }
-  return null;
-}
-
-/**
- * Build an Express app by wiring routes/index.* onto a fresh app instance.
- * Works even if server.js doesn't export the app.
- */
+/** Build an Express app from routes/index.* without starting a real server */
 function buildAppFromRoutes() {
   const projectRoot = path.resolve(__dirname, '..');
-  const routesPath = findFirstMatch(
-    projectRoot,
-    new RegExp(`${path.sep}routes${path.sep}index\\.(js|cjs|mjs)$`, 'i'),
-  );
-  if (!routesPath) {
-    throw new Error('Could not locate routes/index.js to build the Express app');
-  }
 
-  // Ensure utils/redis is cached with redis-mock before loading routes/controllers
-  const utilsRoot = path.join(projectRoot, 'utils');
-  const redisUtilPath = findFirstMatch(utilsRoot, /redis.*\.js$/i);
-  const dbUtilPath = findFirstMatch(utilsRoot, /db.*\.js$/i);
+  // 1) Prime utils with mocks BEFORE loading routes/controllers
+  const utilsDir = path.join(projectRoot, 'utils');
+  const redisUtilPath = findFirstMatch(utilsDir, /(^|[\\/])redis.*\.js$/i);
+  const dbUtilPath = findFirstMatch(utilsDir, /(^|[\\/])db.*\.js$/i);
 
-  if (redisUtilPath) {
-    // prime cache with mocked redis for this module
-    // eslint-disable-next-line import/no-dynamic-require, global-require
-    redisClient = proxyquire(redisUtilPath, { redis: redisMock });
-  }
-  if (dbUtilPath) {
-    // eslint-disable-next-line import/no-dynamic-require, global-require
-    dbClient = require(dbUtilPath);
-  }
+  if (!redisUtilPath) throw new Error('Could not locate utils/redis*.js');
+  if (!dbUtilPath) throw new Error('Could not locate utils/db*.js');
 
-  // Now load routes (controllers will import utils/*, hitting the cache we primed)
+  // Load redis util with the redis package mocked
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  redisClient = proxyquire(redisUtilPath, { redis: redisMock });
+  // Load db util normally (it will read env we set in before())
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  dbClient = require(dbUtilPath);
+
+  // 2) Load routes
+  const routesDir = path.join(projectRoot, 'routes');
+  const routesPath = findFirstMatch(routesDir, /(^|[\\/])index\.(js|cjs|mjs)$/i);
+  if (!routesPath) throw new Error('Could not locate routes/index.js');
+
   // eslint-disable-next-line import/no-dynamic-require, global-require
   const routesMod = require(routesPath);
   const router = (routesMod && routesMod.default) ? routesMod.default : routesMod;
 
+  // 3) Build express app
   const a = express();
   a.use(express.json({ limit: '50mb' }));
   a.use(express.urlencoded({ extended: true }));
 
-  // Support both router (app.use) and mapping function (router(app))
+  // Support both exported router and exported function(app)
   if (typeof router === 'function' && typeof router.use !== 'function') {
-    // likely a (app) => { app.get(...); }
     router(a);
   } else {
-    // likely an Express.Router()
     a.use('/', router);
   }
   return a;
 }
 
-/* -------------------------- Global setup/teardown -------------------------- */
+/* ----------------------- global setup / teardown ---------------------- */
 
 before(async function initSuite() {
   this.timeout(30000);
 
-  // Mongo in-memory
+  // Start Mongo in-memory and publish connection in env the way your db util expects
   mongod = await MongoMemoryServer.create();
-  const uri = mongod.getUri();
+  const uri = mongod.getUri(); // e.g. mongodb://127.0.0.1:54321/
   process.env.DB_URI = uri;
-  process.env.DB_HOST = '127.0.0.1';
-  process.env.DB_PORT = '27017';
-  process.env.DB_DATABASE = 'files_manager_test';
+
+  // Some templates ignore DB_URI and use DB_HOST/DB_PORT/DB_DATABASE:
+  const m = uri.match(/^mongodb:\/\/([^:/]+):(\d+)(?:\/([^?]+))?/);
+  process.env.DB_HOST = (m && m[1]) || '127.0.0.1';
+  process.env.DB_PORT = (m && m[2]) || '27017';
+  process.env.DB_DATABASE = (m && m[3]) || 'files_manager_test';
   process.env.NODE_ENV = 'test';
 
-  // 1) Try to get exported app (server.js/app.js). If not, build from routes.
-  app = tryLoadExportedApp();
-  if (!app) {
-    app = buildAppFromRoutes();
-  }
-
-  // If utils were not found during build, attempt to grab them from cache now
-  if (!redisClient || !dbClient) {
-    const keys = Object.keys(require.cache || {});
-    for (let i = 0; i < keys.length; i += 1) {
-      const k = keys[i];
-      if (!redisClient && /[\\/]+utils[\\/].*redis.*\.js$/i.test(k)) {
-        // eslint-disable-next-line import/no-dynamic-require, global-require
-        redisClient = require(k);
-      }
-      if (!dbClient && /[\\/]+utils[\\/].*db.*\.js$/i.test(k)) {
-        // eslint-disable-next-line import/no-dynamic-require, global-require
-        dbClient = require(k);
-      }
-    }
-  }
-
-  if (!redisClient) {
-    throw new Error('Could not resolve utils/redis*.js (with redis mocked)');
-  }
-  if (!dbClient) {
-    throw new Error('Could not resolve utils/db*.js');
-  }
+  // Build the app purely from routes to avoid running server.js (no listen, no real Redis)
+  app = buildAppFromRoutes();
 });
 
 after(async () => {
@@ -312,7 +254,7 @@ describe('API Endpoints', () => {
     expect(res.body.isPublic).to.equal(false);
   });
 
-  it('GET /files/:id/data -> 200 (if public) or 403/404 depending on impl)', async () => {
+  it('GET /files/:id/data -> 200 (if public) or 403/404 depending on impl', async () => {
     // ensure public
     await request(app).put(`/files/${fileId}/publish`).set('X-Token', token);
     const res = await request(app).get(`/files/${fileId}/data`);
