@@ -6,6 +6,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const redisMock = require('redis-mock');
 const proxyquire = require('proxyquire');
 const { ObjectId } = require('mongodb');
+const path = require('path');
 
 let app;
 let dbClient;      // proxy-required ../utils/db
