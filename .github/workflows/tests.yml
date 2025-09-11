@@ -1,3 +1,4 @@
+# .github/workflows/tests.yml
 name: Run Tests
 
 on:
@@ -11,9 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '20'
-      - run: npm install
-      - run: npm tests
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
