@@ -46,8 +46,8 @@ function buildAppFromRoutes() {
 
   // 1) Prime utils with mocks BEFORE loading routes/controllers
   const utilsDir = path.join(projectRoot, 'utils');
-  const redisUtilPath = findFirstMatch(utilsDir, /(^|[\\/])redis.*\.js$/i);
-  const dbUtilPath = findFirstMatch(utilsDir, /(^|[\\/])db.*\.js$/i);
+  const redisUtilPath = findFirstMatch(utilsDir, /(^|[\\/])redis.*\.mjs$/i);
+  const dbUtilPath = findFirstMatch(utilsDir, /(^|[\\/])db.*\.mjs$/i);
 
   if (!redisUtilPath) throw new Error('Could not locate utils/redis*.js');
   if (!dbUtilPath) throw new Error('Could not locate utils/db*.js');
