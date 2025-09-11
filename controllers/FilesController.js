@@ -141,10 +141,21 @@ class FilesController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
+      // const { parentId, page } = req.query || {};
+      // const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
       const { parentId, page } = req.query || {};
-      const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
+      const p = parseInt(page, 10);
+      const pageNum = Number.isNaN(p) || p < 0 ? 0 : p;
 
-      const isRoot = parentId === undefined || parentId === null || parentId === '' || parentId === '0' || parentId === 0;
+      // const isRoot = parentId === undefined || parentId === null ||
+      // parentId === '' || parentId === '0' || parentId === 0;
+      const isRoot = (
+        parentId === undefined
+        || parentId === null
+        || parentId === ''
+        || parentId === '0'
+        || parentId === 0
+      );
 
       // Spécification: pas de validation de parentId
       const matchByParent = isRoot
@@ -157,6 +168,16 @@ class FilesController {
         { $sort: { _id: 1 } },
         { $skip: pageNum * 20 },
         { $limit: 20 },
+        {
+          $project: {
+            _id: 1,
+            userId: 1,
+            name: 1,
+            type: 1,
+            isPublic: 1,
+            parentId: 1,
+          },
+        },
       ];
 
       const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
