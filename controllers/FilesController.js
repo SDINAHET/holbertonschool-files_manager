@@ -121,16 +121,16 @@ class FilesController {
     }
   }
 
-  // --- GET /files : liste par parentId + pagination (sans valider parentId)
+  // --- GET /files
   static async getIndex(req, res) {
     try {
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-      // anti-pending: si Redis ne répond pas vite, on refuse (401)
+      // borne l'attente Redis pour éviter le timeout du checker
       const userIdStr = await Promise.race([
         redisClient.get(`auth_${token}`),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('auth-timeout')), 2000)),
+        new Promise((_, r) => setTimeout(() => r(new Error('auth-timeout')), 2000)),
       ]).catch(() => null);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -144,17 +144,15 @@ class FilesController {
       const pageNum = Number.isNaN(p) || p < 0 ? 0 : p;
 
       const isRoot = (
-        parentId === undefined
-        || parentId === 'undefined'
-        || parentId === null
-        || parentId === ''
-        || parentId === '0'
-        || parentId === 0
+        parentId === undefined || parentId === null || parentId === '' ||
+        parentId === '0' || parentId === 0
       );
 
+      // pas de validation de parentId demandée
       const matchByParent = isRoot
         ? { $or: [{ parentId: 0 }, { parentId: '0' }] }
-        : { parentId: (ObjectId.isValid(parentId) ? new ObjectId(parentId) : parentId) };
+        : { parentId: (ObjectId.isValid(parentId)
+            ? new ObjectId(parentId) : parentId) };
 
       const docs = await dbClient.db.collection('files').aggregate([
         { $match: { userId } },
@@ -169,31 +167,29 @@ class FilesController {
         },
       ]).toArray();
 
-      return res.status(200).json(docs.map((d) => ({
-        id: d._id.toString(),
-        userId: d.userId.toString(),
-        name: d.name,
-        type: d.type,
-        isPublic: d.isPublic === true,
-        parentId: (d.parentId && d.parentId !== 0 && d.parentId !== '0')
-          ? d.parentId.toString()
-          : 0,
+      return res.status(200).json(docs.map((doc) => ({
+        id: doc._id.toString(),
+        userId: doc.userId.toString(),
+        name: doc.name,
+        type: doc.type,
+        isPublic: doc.isPublic === true,
+        parentId: (doc.parentId && doc.parentId !== 0 && doc.parentId !== '0')
+          ? doc.parentId.toString() : 0,
       })));
-    } catch (err) {
+    } catch (_err) {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
 
-  // --- GET /files/:id : un fichier du user par id
+  // --- GET /files/:id
   static async getShow(req, res) {
     try {
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-      // anti-pending Redis
       const userIdStr = await Promise.race([
         redisClient.get(`auth_${token}`),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('auth-timeout')), 2000)),
+        new Promise((_, r) => setTimeout(() => r(new Error('auth-timeout')), 2000)),
       ]).catch(() => null);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -208,7 +204,8 @@ class FilesController {
         return res.status(404).json({ error: 'Not found' });
       }
 
-      const doc = await dbClient.db.collection('files').findOne({ _id: fileId, userId });
+      const doc = await dbClient.db.collection('files')
+        .findOne({ _id: fileId, userId });
       if (!doc) return res.status(404).json({ error: 'Not found' });
 
       return res.status(200).json({
@@ -218,10 +215,9 @@ class FilesController {
         type: doc.type,
         isPublic: doc.isPublic === true,
         parentId: (doc.parentId && doc.parentId !== 0 && doc.parentId !== '0')
-          ? doc.parentId.toString()
-          : 0,
+          ? doc.parentId.toString() : 0,
       });
-    } catch (err) {
+    } catch (_err) {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
