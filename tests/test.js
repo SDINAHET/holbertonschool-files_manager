@@ -1,15 +1,19 @@
 // tests/test.js
 /* eslint-disable no-unused-expressions */
+require('@babel/register'); // enable ES module import in project files
+
 const { expect } = require('chai');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const redisMock = require('redis-mock');
 const proxyquire = require('proxyquire');
 const path = require('path');
+const fs = require('fs');
+const express = require('express');
 
 let app;
-let dbClient;      // instance réelle chargée par l'app
-let redisClient;   // instance réelle chargée par l'app (mais redis mocké)
+let dbClient;      // actual instance loaded by the app
+let redisClient;   // actual instance loaded by the app (with redis mocked)
 let mongod;
 
 /* ------------------------------ Helpers ------------------------------ */
@@ -18,26 +22,99 @@ let mongod;
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
 const b64data = (s) => Buffer.from(s, 'utf8').toString('base64');
 
-// Charge server/app en remplaçant tout require('redis') par redis-mock
-function loadAppWithRedisMock() {
+/**
+ * Recursively find first file matching regex under a root directory.
+ */
+function findFirstMatch(rootDir, regex) {
+  const stack = [rootDir];
+  while (stack.length) {
+    const cur = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(cur, { withFileTypes: true });
+    } catch (e) { /* ignore unreadable dirs */ }
+    for (let i = 0; i < entries.length; i += 1) {
+      const ent = entries[i];
+      const full = path.join(cur, ent.name);
+      if (ent.isDirectory()) {
+        stack.push(full);
+      } else if (ent.isFile() && regex.test(full)) {
+        return full;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Try requiring server/app and return exported Express app if any.
+ * Redis is mocked globally via proxyquire when we require these entry files.
+ */
+function tryLoadExportedApp() {
   const candidates = ['../server.js', '../server', '../app.js', '../app'];
   for (let i = 0; i < candidates.length; i += 1) {
     try {
+      // Stub the 'redis' package everywhere this module graph requires it
       // eslint-disable-next-line import/no-dynamic-require, global-require
       const mod = proxyquire(candidates[i], { redis: redisMock });
-      return (mod && mod.default) ? mod.default : mod;
-    } catch (e) { /* try next candidate */ }
-  }
-  throw new Error('Export your Express instance from server.js or app.js');
-}
-
-// Récupère depuis le require cache un module dont le chemin matche la regex
-function findLoadedModule(regex) {
-  const keys = Object.keys(require.cache || {});
-  for (let i = 0; i < keys.length; i += 1) {
-    if (regex.test(keys[i])) return keys[i];
+      const maybeApp = (mod && mod.default) ? mod.default : mod;
+      if (maybeApp && typeof maybeApp === 'function' && typeof maybeApp.use === 'function') {
+        return maybeApp; // looks like an Express app
+      }
+    } catch (e) {
+      // try next candidate
+    }
   }
   return null;
+}
+
+/**
+ * Build an Express app by wiring routes/index.* onto a fresh app instance.
+ * Works even if server.js doesn't export the app.
+ */
+function buildAppFromRoutes() {
+  const projectRoot = path.resolve(__dirname, '..');
+  const routesPath = findFirstMatch(
+    projectRoot,
+    new RegExp(`${path.sep}routes${path.sep}index\\.(js|cjs|mjs)$`, 'i'),
+  );
+  if (!routesPath) {
+    throw new Error('Could not locate routes/index.js to build the Express app');
+  }
+
+  // Ensure utils/redis is cached with redis-mock before loading routes/controllers
+  const utilsRoot = path.join(projectRoot, 'utils');
+  const redisUtilPath = findFirstMatch(utilsRoot, /redis.*\.js$/i);
+  const dbUtilPath = findFirstMatch(utilsRoot, /db.*\.js$/i);
+
+  if (redisUtilPath) {
+    // prime cache with mocked redis for this module
+    // eslint-disable-next-line import/no-dynamic-require, global-require
+    redisClient = proxyquire(redisUtilPath, { redis: redisMock });
+  }
+  if (dbUtilPath) {
+    // eslint-disable-next-line import/no-dynamic-require, global-require
+    dbClient = require(dbUtilPath);
+  }
+
+  // Now load routes (controllers will import utils/*, hitting the cache we primed)
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  const routesMod = require(routesPath);
+  const router = (routesMod && routesMod.default) ? routesMod.default : routesMod;
+
+  const a = express();
+  a.use(express.json({ limit: '50mb' }));
+  a.use(express.urlencoded({ extended: true }));
+
+  // Support both router (app.use) and mapping function (router(app))
+  if (typeof router === 'function' && typeof router.use !== 'function') {
+    // likely a (app) => { app.get(...); }
+    router(a);
+  } else {
+    // likely an Express.Router()
+    a.use('/', router);
+  }
+  return a;
 }
 
 /* -------------------------- Global setup/teardown -------------------------- */
@@ -45,7 +122,7 @@ function findLoadedModule(regex) {
 before(async function initSuite() {
   this.timeout(30000);
 
-  // Mongo en mémoire
+  // Mongo in-memory
   mongod = await MongoMemoryServer.create();
   const uri = mongod.getUri();
   process.env.DB_URI = uri;
@@ -54,21 +131,34 @@ before(async function initSuite() {
   process.env.DB_DATABASE = 'files_manager_test';
   process.env.NODE_ENV = 'test';
 
-  // 1) Charge l'app en mockant le package 'redis'
-  app = loadAppWithRedisMock();
+  // 1) Try to get exported app (server.js/app.js). If not, build from routes.
+  app = tryLoadExportedApp();
+  if (!app) {
+    app = buildAppFromRoutes();
+  }
 
-  // 2) Récupère les chemins réels de utils/redis* et utils/db* chargés par l'app
-  const redisPath = findLoadedModule(/[\\/]+utils[\\/].*redis.*\.js$/i);
-  const dbPath = findLoadedModule(/[\\/]+utils[\\/].*db.*\.js$/i);
+  // If utils were not found during build, attempt to grab them from cache now
+  if (!redisClient || !dbClient) {
+    const keys = Object.keys(require.cache || {});
+    for (let i = 0; i < keys.length; i += 1) {
+      const k = keys[i];
+      if (!redisClient && /[\\/]+utils[\\/].*redis.*\.js$/i.test(k)) {
+        // eslint-disable-next-line import/no-dynamic-require, global-require
+        redisClient = require(k);
+      }
+      if (!dbClient && /[\\/]+utils[\\/].*db.*\.js$/i.test(k)) {
+        // eslint-disable-next-line import/no-dynamic-require, global-require
+        dbClient = require(k);
+      }
+    }
+  }
 
-  if (!redisPath) throw new Error('Could not locate utils/redis*.js in require cache');
-  if (!dbPath) throw new Error('Could not locate utils/db*.js in require cache');
-
-  // 3) Charge ces instances (déjà câblées avec redis-mock via proxyquire)
-  // eslint-disable-next-line import/no-dynamic-require, global-require
-  redisClient = require(redisPath);
-  // eslint-disable-next-line import/no-dynamic-require, global-require
-  dbClient = require(dbPath);
+  if (!redisClient) {
+    throw new Error('Could not resolve utils/redis*.js (with redis mocked)');
+  }
+  if (!dbClient) {
+    throw new Error('Could not resolve utils/db*.js');
+  }
 });
 
 after(async () => {

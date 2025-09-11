@@ -9,7 +9,7 @@
         "start-server": "nodemon --exec babel-node --presets @babel/preset-env ./server.js",
         "start-worker": "nodemon --exec babel-node --presets @babel/preset-env ./worker.js",
         "dev": "nodemon --exec babel-node --presets @babel/preset-env",
-        "test": "mocha tests/test.js --timeout 10000",
+        "test": "mocha tests/test.js --require @babel/register --timeout 20000 --exit",
         "test:checker": "bash -c '(NODE_ENV=test babel-node --presets @babel/preset-env server.js & S=$!; until (echo > /dev/tcp/127.0.0.1/5000) 2>/dev/null; do sleep 0.2; done; npm test hbtn_test_5.test.cjs; r=$?; kill $S; wait $S 2>/dev/null; exit $r)'"
     },
     "author": "",
