@@ -121,34 +121,31 @@ class FilesController {
     }
   }
 
-  // GET /files — liste par parentId + pagination, sans "valider" parentId
-  // --- GET /files
+  // --- GET /files : liste par parentId + pagination (sans valider parentId)
   static async getIndex(req, res) {
     try {
-      // 1) Auth
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-      // Guards rapides: évitent d'attendre indéfiniment si Redis/DB ne sont pas prêts
-      if (!redisClient.isAlive()) return res.status(401).json({ error: 'Unauthorized' });
-      if (!dbClient.isAlive()) return res.status(500).json({ error: 'Internal Server Error' });
-
-      const userIdStr = await redisClient.get(`auth_${token}`);
+      // anti-pending: si Redis ne répond pas vite, on refuse (401)
+      const userIdStr = await Promise.race([
+        redisClient.get(`auth_${token}`),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('auth-timeout')), 2000)),
+      ]).catch(() => null);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try { userId = new ObjectId(userIdStr); } catch (_) {
+      try { userId = new ObjectId(userIdStr); } catch (e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // 2) Params (sans risquer des NaN/undefined)
       const { parentId, page } = req.query || {};
       const p = parseInt(page, 10);
       const pageNum = Number.isNaN(p) || p < 0 ? 0 : p;
 
-      // 3) parentId: pas de validation → racine si vide/"0"/0
       const isRoot = (
         parentId === undefined
+        || parentId === 'undefined'
         || parentId === null
         || parentId === ''
         || parentId === '0'
@@ -159,7 +156,6 @@ class FilesController {
         ? { $or: [{ parentId: 0 }, { parentId: '0' }] }
         : { parentId: (ObjectId.isValid(parentId) ? new ObjectId(parentId) : parentId) };
 
-      // 4) Pagination via aggregate
       const docs = await dbClient.db.collection('files').aggregate([
         { $match: { userId } },
         { $match: matchByParent },
@@ -168,18 +164,54 @@ class FilesController {
         { $limit: 20 },
         {
           $project: {
-            _id: 1,
-            userId: 1,
-            name: 1,
-            type: 1,
-            isPublic: 1,
-            parentId: 1,
+            _id: 1, userId: 1, name: 1, type: 1, isPublic: 1, parentId: 1,
           },
         },
       ]).toArray();
 
-      // 5) Mapping de sortie conforme
-      return res.status(200).json(docs.map((doc) => ({
+      return res.status(200).json(docs.map((d) => ({
+        id: d._id.toString(),
+        userId: d.userId.toString(),
+        name: d.name,
+        type: d.type,
+        isPublic: d.isPublic === true,
+        parentId: (d.parentId && d.parentId !== 0 && d.parentId !== '0')
+          ? d.parentId.toString()
+          : 0,
+      })));
+    } catch (err) {
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
+  // --- GET /files/:id : un fichier du user par id
+  static async getShow(req, res) {
+    try {
+      const token = req.header('X-Token');
+      if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+      // anti-pending Redis
+      const userIdStr = await Promise.race([
+        redisClient.get(`auth_${token}`),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('auth-timeout')), 2000)),
+      ]).catch(() => null);
+      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
+
+      let userId;
+      try { userId = new ObjectId(userIdStr); } catch (e) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { id } = req.params;
+      let fileId;
+      try { fileId = new ObjectId(id); } catch (e) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const doc = await dbClient.db.collection('files').findOne({ _id: fileId, userId });
+      if (!doc) return res.status(404).json({ error: 'Not found' });
+
+      return res.status(200).json({
         id: doc._id.toString(),
         userId: doc.userId.toString(),
         name: doc.name,
@@ -188,43 +220,8 @@ class FilesController {
         parentId: (doc.parentId && doc.parentId !== 0 && doc.parentId !== '0')
           ? doc.parentId.toString()
           : 0,
-      })));
+      });
     } catch (err) {
-      // console.error('FilesController.getIndex error:', err?.message || err);
-      return res.status(500).json({ error: 'Internal Server Error' });
-    }
-  }
-
-  // GET /files/:id — fichier d’un utilisateur par id
-  static async getShow(req, res) {
-    try {
-      const token = req.header('X-Token');
-      if (!token) return res.status(401).json({ error: 'Unauthorized' });
-      const userIdStr = await redisClient.get(`auth_${token}`);
-      if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
-
-      let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      const { id } = req.params;
-      let fileId;
-      try {
-        fileId = new ObjectId(id);
-      } catch (e) {
-        return res.status(404).json({ error: 'Not found' });
-      }
-
-      const doc = await dbClient.db.collection('files').findOne({ _id: fileId, userId });
-      if (!doc) return res.status(404).json({ error: 'Not found' });
-
-      return res.status(200).json(mapFileDoc(doc));
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('FilesController.getShow error:', err && err.message ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
