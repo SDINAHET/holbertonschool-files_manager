@@ -125,15 +125,15 @@ class FilesController {
   // --- GET /files
   static async getIndex(req, res) {
     try {
+      // 1) Auth
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-      // Timeout court pour éviter de rester bloqué si Redis tarde
-      const userIdStr = await Promise.race([
-        redisClient.get(`auth_${token}`),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('auth-timeout')), 2000)),
-      ]).catch(() => null);
+      // Guards rapides: évitent d'attendre indéfiniment si Redis/DB ne sont pas prêts
+      if (!redisClient.isAlive()) return res.status(401).json({ error: 'Unauthorized' });
+      if (!dbClient.isAlive()) return res.status(500).json({ error: 'Internal Server Error' });
 
+      const userIdStr = await redisClient.get(`auth_${token}`);
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
@@ -141,14 +141,12 @@ class FilesController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // const { parentId, page } = req.query || {};
-      // const pageNum = Number.isFinite(+page) ? Math.max(0, Math.trunc(+page)) : 0;
+      // 2) Params (sans risquer des NaN/undefined)
       const { parentId, page } = req.query || {};
       const p = parseInt(page, 10);
       const pageNum = Number.isNaN(p) || p < 0 ? 0 : p;
 
-      // const isRoot = parentId === undefined || parentId === null ||
-      // parentId === '' || parentId === '0' || parentId === 0;
+      // 3) parentId: pas de validation → racine si vide/"0"/0
       const isRoot = (
         parentId === undefined
         || parentId === null
@@ -157,12 +155,12 @@ class FilesController {
         || parentId === 0
       );
 
-      // Spécification: pas de validation de parentId
       const matchByParent = isRoot
-        ? { $or: [{ parentId: 0 }, { parentId: '0' }, { parentId: { $exists: false } }] }
-        : { parentId: ObjectId.isValid(parentId) ? new ObjectId(parentId) : parentId };
+        ? { $or: [{ parentId: 0 }, { parentId: '0' }] }
+        : { parentId: (ObjectId.isValid(parentId) ? new ObjectId(parentId) : parentId) };
 
-      const pipeline = [
+      // 4) Pagination via aggregate
+      const docs = await dbClient.db.collection('files').aggregate([
         { $match: { userId } },
         { $match: matchByParent },
         { $sort: { _id: 1 } },
@@ -178,21 +176,21 @@ class FilesController {
             parentId: 1,
           },
         },
-      ];
+      ]).toArray();
 
-      const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
-
+      // 5) Mapping de sortie conforme
       return res.status(200).json(docs.map((doc) => ({
         id: doc._id.toString(),
         userId: doc.userId.toString(),
         name: doc.name,
         type: doc.type,
         isPublic: doc.isPublic === true,
-        parentId: (doc.parentId && doc.parentId !== 0 && doc.parentId !== '0') ? doc.parentId.toString() : 0,
+        parentId: (doc.parentId && doc.parentId !== 0 && doc.parentId !== '0')
+          ? doc.parentId.toString()
+          : 0,
       })));
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('FilesController.getIndex error:', err && err.message ? err.message : err);
+      // console.error('FilesController.getIndex error:', err?.message || err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
