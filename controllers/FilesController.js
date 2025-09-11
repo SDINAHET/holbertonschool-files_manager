@@ -1,5 +1,6 @@
 // controllers/FilesController.js
-import { promises as fs } from 'fs';
+import fs from 'fs';                    // (optionnel si tu veux existsSync, ici on n'en a pas besoin)
+import { promises as fsp } from 'fs';   // API promesse
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import mongodb from 'mongodb';
@@ -44,12 +45,8 @@ class FilesController {
       } = req.body || {};
 
       if (!name) return res.status(400).json({ error: 'Missing name' });
-      if (!type || !VALID_TYPES.has(type)) {
-        return res.status(400).json({ error: 'Missing type' });
-      }
-      if (type !== 'folder' && !data) {
-        return res.status(400).json({ error: 'Missing data' });
-      }
+      if (!type || !VALID_TYPES.has(type)) return res.status(400).json({ error: 'Missing type' });
+      if (type !== 'folder' && !data) return res.status(400).json({ error: 'Missing data' });
 
       let parentRef = 0;
       if (parentId && parentId !== 0 && parentId !== '0') {
@@ -61,28 +58,20 @@ class FilesController {
         }
         const parentDoc = await dbClient.db.collection('files').findOne({ _id: parentObjId });
         if (!parentDoc) return res.status(400).json({ error: 'Parent not found' });
-        if (parentDoc.type !== 'folder') {
-          return res.status(400).json({ error: 'Parent is not a folder' });
-        }
+        if (parentDoc.type !== 'folder') return res.status(400).json({ error: 'Parent is not a folder' });
         parentRef = parentObjId;
       }
 
       if (type === 'folder') {
         const doc = {
-          userId,
-          name,
-          type,
-          isPublic: Boolean(isPublic),
+          userId, name, type, isPublic: Boolean(isPublic),
           parentId: parentRef === 0 ? 0 : parentRef,
         };
-
         const result = await dbClient.db.collection('files').insertOne(doc);
         return res.status(201).json({
           id: result.insertedId.toString(),
           userId: userId.toString(),
-          name,
-          type,
-          isPublic: Boolean(isPublic),
+          name, type, isPublic: Boolean(isPublic),
           parentId: parentRef === 0 ? 0 : parentRef.toString(),
         });
       }
@@ -90,45 +79,36 @@ class FilesController {
       const folderPath = (process.env.FOLDER_PATH && process.env.FOLDER_PATH.trim())
         ? process.env.FOLDER_PATH.trim()
         : '/tmp/files_manager';
-      await fs.mkdir(folderPath, { recursive: true });
+      await fsp.mkdir(folderPath, { recursive: true });
 
       const localName = uuidv4();
       const localPath = path.join(folderPath, localName);
       const fileBuffer = Buffer.from(data, 'base64');
-      await fs.writeFile(localPath, fileBuffer);
+      await fsp.writeFile(localPath, fileBuffer);
 
       const doc = {
-        userId,
-        name,
-        type,
-        isPublic: Boolean(isPublic),
-        parentId: parentRef === 0 ? 0 : parentRef,
-        localPath,
+        userId, name, type, isPublic: Boolean(isPublic),
+        parentId: parentRef === 0 ? 0 : parentRef, localPath,
       };
       const result = await dbClient.db.collection('files').insertOne(doc);
 
       return res.status(201).json({
         id: result.insertedId.toString(),
         userId: userId.toString(),
-        name,
-        type,
-        isPublic: Boolean(isPublic),
+        name, type, isPublic: Boolean(isPublic),
         parentId: parentRef === 0 ? 0 : parentRef.toString(),
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('FilesController.postUpload error:', err && err.message ? err.message : err);
+      console.error('FilesController.postUpload error:', err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
 
-  // --- GET /files
   static async getIndex(req, res) {
     try {
       const token = req.header('X-Token');
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-      // borne l'attente Redis pour éviter le timeout du checker
       const userIdStr = await Promise.race([
         redisClient.get(`auth_${token}`),
         new Promise((_, r) => setTimeout(() => r(new Error('auth-timeout')), 2000)),
@@ -136,7 +116,7 @@ class FilesController {
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try { userId = new ObjectId(userIdStr); } catch (e) {
+      try { userId = new ObjectId(userIdStr); } catch (_e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
@@ -145,21 +125,15 @@ class FilesController {
       const pageNum = Number.isNaN(p) || p < 0 ? 0 : p;
 
       const isRoot = (
-        parentId === undefined
-        || parentId === null
-        || parentId === ''
-        || parentId === '0'
-        || parentId === 0
+        parentId === undefined || parentId === null
+        || parentId === '' || parentId === '0' || parentId === 0
       );
 
-      // pas de validation de parentId demandée
       const matchByParent = isRoot
         ? { $or: [{ parentId: 0 }, { parentId: '0' }] }
         : {
-          parentId: ObjectId.isValid(parentId)
-            ? new ObjectId(parentId)
-            : parentId,
-        };
+            parentId: ObjectId.isValid(parentId) ? new ObjectId(parentId) : parentId,
+          };
 
       const docs = await dbClient.db.collection('files').aggregate([
         { $match: { userId } },
@@ -167,28 +141,15 @@ class FilesController {
         { $sort: { _id: 1 } },
         { $skip: pageNum * 20 },
         { $limit: 20 },
-        {
-          $project: {
-            _id: 1, userId: 1, name: 1, type: 1, isPublic: 1, parentId: 1,
-          },
-        },
+        { $project: { _id: 1, userId: 1, name: 1, type: 1, isPublic: 1, parentId: 1 } },
       ]).toArray();
 
-      return res.status(200).json(docs.map((doc) => ({
-        id: doc._id.toString(),
-        userId: doc.userId.toString(),
-        name: doc.name,
-        type: doc.type,
-        isPublic: doc.isPublic === true,
-        parentId: (doc.parentId && doc.parentId !== 0 && doc.parentId !== '0')
-          ? doc.parentId.toString() : 0,
-      })));
+      return res.status(200).json(docs.map(mapFileDoc));
     } catch (_err) {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
 
-  // --- GET /files/:id
   static async getShow(req, res) {
     try {
       const token = req.header('X-Token');
@@ -201,13 +162,13 @@ class FilesController {
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try { userId = new ObjectId(userIdStr); } catch (e) {
+      try { userId = new ObjectId(userIdStr); } catch (_e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { id } = req.params;
       let fileId;
-      try { fileId = new ObjectId(id); } catch (e) {
+      try { fileId = new ObjectId(id); } catch (_e) {
         return res.status(404).json({ error: 'Not found' });
       }
 
@@ -215,15 +176,7 @@ class FilesController {
         .findOne({ _id: fileId, userId });
       if (!doc) return res.status(404).json({ error: 'Not found' });
 
-      return res.status(200).json({
-        id: doc._id.toString(),
-        userId: doc.userId.toString(),
-        name: doc.name,
-        type: doc.type,
-        isPublic: doc.isPublic === true,
-        parentId: (doc.parentId && doc.parentId !== 0 && doc.parentId !== '0')
-          ? doc.parentId.toString() : 0,
-      });
+      return res.status(200).json(mapFileDoc(doc));
     } catch (_err) {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
@@ -237,17 +190,13 @@ class FilesController {
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
+      try { userId = new ObjectId(userIdStr); } catch (_e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { id } = req.params;
       let fileId;
-      try {
-        fileId = new ObjectId(id);
-      } catch (e) {
+      try { fileId = new ObjectId(id); } catch (_e) {
         return res.status(404).json({ error: 'Not found' });
       }
 
@@ -259,8 +208,7 @@ class FilesController {
       const updated = await filesCol.findOne({ _id: fileId });
       return res.status(200).json(mapFileDoc(updated));
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('FilesController.putPublish error:', err && err.message ? err.message : err);
+      console.error('FilesController.putPublish error:', err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
@@ -273,17 +221,13 @@ class FilesController {
       if (!userIdStr) return res.status(401).json({ error: 'Unauthorized' });
 
       let userId;
-      try {
-        userId = new ObjectId(userIdStr);
-      } catch (e) {
+      try { userId = new ObjectId(userIdStr); } catch (_e) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const { id } = req.params;
       let fileId;
-      try {
-        fileId = new ObjectId(id);
-      } catch (e) {
+      try { fileId = new ObjectId(id); } catch (_e) {
         return res.status(404).json({ error: 'Not found' });
       }
 
@@ -295,46 +239,60 @@ class FilesController {
       const updated = await filesCol.findOne({ _id: fileId });
       return res.status(200).json(mapFileDoc(updated));
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('FilesController.putUnpublish error:', err && err.message ? err.message : err);
+      console.error('FilesController.putUnpublish error:', err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
 
   // ----- Task 8: getFile -----
   static async getFile(req, res) {
-    const { id } = req.params;
-    const { size } = req.query;
-
-    let file;
     try {
-      file = await dbClient.collection('files').findOne({ _id: new ObjectId(id) });
-    } catch (e) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-    if (!file) return res.status(404).json({ error: 'Not found' });
+      const { id } = req.params;
+      const { size } = req.query;
 
-    if (!file.isPublic) {
-      const user = await getUserFromToken(req);
-      if (!user || user._id.toString() !== file.userId.toString()) {
+      let fileId;
+      try { fileId = new ObjectId(id); } catch (_e) {
         return res.status(404).json({ error: 'Not found' });
       }
+
+      const file = await dbClient.db.collection('files').findOne({ _id: fileId });
+      if (!file) return res.status(404).json({ error: 'Not found' });
+
+      if (file.type === 'folder') {
+        return res.status(400).json({ error: "A folder doesn't have content" });
+      }
+
+      // Access control: if not public, only owner can read
+      if (!file.isPublic) {
+        const token = req.header('X-Token');
+        if (!token) return res.status(404).json({ error: 'Not found' });
+        const userIdStr = await redisClient.get(`auth_${token}`);
+        if (!userIdStr || userIdStr.toString() !== file.userId.toString()) {
+          return res.status(404).json({ error: 'Not found' });
+        }
+      }
+
+      // Determine path (original or resized)
+      let { localPath } = file;
+      if (size && ['500', '250', '100'].includes(String(size))) {
+        localPath = `${localPath}_${size}`;
+      }
+
+      // Ensure file exists, read and return
+      try {
+        await fsp.access(localPath);
+      } catch (_e) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const data = await fsp.readFile(localPath);
+      const mimeType = mime.lookup(file.name) || 'application/octet-stream';
+      res.setHeader('Content-Type', mimeType);
+      return res.status(200).send(data);
+    } catch (err) {
+      console.error('FilesController.getFile error:', err);
+      return res.status(500).json({ error: 'Internal Server Error' });
     }
-
-    if (file.type === 'folder') return res.status(400).json({ error: "A folder doesn't have content" });
-
-    // ⬇️ Fix ESLint prefer-destructuring
-    let { localPath } = file;
-    if (size && ['500', '250', '100'].includes(String(size))) {
-      localPath = `${localPath}_${size}`;
-    }
-
-    if (!fs.existsSync(localPath)) return res.status(404).json({ error: 'Not found' });
-
-    const mimeType = mime.lookup(file.name) || 'application/octet-stream';
-    res.setHeader('Content-Type', mimeType);
-    const data = fs.readFileSync(localPath);
-    return res.status(200).send(data);
   }
 }
 
