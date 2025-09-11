@@ -70,8 +70,17 @@ before(async function initSuite() {
   process.env.NODE_ENV = 'test';
 
   // Load utils with redis mocked (do not require at top to avoid double instances)
-  redisClient = proxyquire('../utils/redis', { redis: redisMock });
-  dbClient = proxyquire('../utils/db', {});
+  // redisClient = proxyquire('../utils/redis', { redis: redisMock });
+  // dbClient = proxyquire('../utils/db', {});
+    // ✅ par celles-ci (chemins robustes + extension .js)
+  redisClient = proxyquire(
+    path.resolve(__dirname, '../utils/redis.js'),
+    { redis: redisMock }
+  );
+  dbClient = proxyquire(
+    path.resolve(__dirname, '../utils/db.js'),
+    {}
+  );
 
   // Load Express app
   app = loadApp();
