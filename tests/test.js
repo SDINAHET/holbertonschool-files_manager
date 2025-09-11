@@ -39,6 +39,20 @@ function findFirstMatch(rootDir, regex) {
   return null;
 }
 
+async function waitFor(fn, timeout = 5000, step = 50) {
+  const start = Date.now();
+  // fn peut être sync ou async
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await Promise.resolve().then(fn).catch(() => false);
+    if (ok) return true;
+    if (Date.now() - start > timeout) return false;
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, step));
+  }
+}
+
 /** Return an instance no matter if module exported an instance or a class */
 function normalizeUtil(mod) {
   let m = mod && mod.default ? mod.default : mod;
@@ -161,6 +175,15 @@ describe('redisClient', () => {
 /* -------------------------------- dbClient -------------------------------- */
 
 describe('dbClient', () => {
+    before(async function () {
+    this.timeout(10000);
+    await waitFor(
+      () => dbClient && typeof dbClient.isAlive === 'function' && dbClient.isAlive(),
+      9000,
+      60
+    );
+  });
+
   it('isAlive() returns true (connected)', () => {
     expect(dbClient.isAlive()).to.be.true;
   });

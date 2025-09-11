@@ -30,24 +30,24 @@ module.exports = {
       ],
     },
     overrides:[
+      {
+        files: ['*.js'],
+        excludedFiles: 'babel.config.js',
+      }
       // {
-      //   files: ['*.js'],
-      //   excludedFiles: 'babel.config.js',
-      // }
-    {
-      files: ['tests/**/*.js'], // seulement les tests
-      env: { mocha: true, node: true },
-      plugins: ['mocha'],
-      extends: ['plugin:mocha/recommended'],
-      rules: {
-        'jest/prefer-expect-assertions': 'off',
-        'jest/valid-expect': 'off',
-        'jest/lowercase-name': 'off',
-        'jest/no-if': 'off',
-        'import/no-unresolved': 'off',
-        'max-len': ['error', { code: 120, ignoreUrls: true }],
-        'no-unused-expressions': 'off', // pour Chai expect(...)
-      },
-    },
+      //   files: ['tests/**/*.js'], // seulement les tests
+      //   env: { mocha: true, node: true },
+      //   plugins: ['mocha'],
+      //   extends: ['plugin:mocha/recommended'],
+      //   rules: {
+      //     'jest/prefer-expect-assertions': 'off',
+      //     'jest/valid-expect': 'off',
+      //     'jest/lowercase-name': 'off',
+      //     'jest/no-if': 'off',
+      //     'import/no-unresolved': 'off',
+      //     'max-len': ['error', { code: 120, ignoreUrls: true }],
+      //     'no-unused-expressions': 'off', // pour Chai expect(...)
+      //   },
+      // },
     ]
 };
