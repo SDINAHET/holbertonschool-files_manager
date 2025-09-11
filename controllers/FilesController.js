@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import mongodb from 'mongodb';
+import mime from 'mime-types';
 import redisClient from '../utils/redis';
 import dbClient from '../utils/db';
 
@@ -297,6 +298,57 @@ class FilesController {
       // eslint-disable-next-line no-console
       console.error('FilesController.putUnpublish error:', err && err.message ? err.message : err);
       return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+
+  static async getFile(req, res) {
+    try {
+      const { id } = req.params;
+
+      // 1) Find file document
+      let fileDoc = null;
+      try {
+        fileDoc = await dbClient.db.collection('files').findOne({ _id: new ObjectId(id) });
+      } catch (e) {
+        // invalid ObjectId format should behave as not found
+      }
+      if (!fileDoc) return res.status(404).json({ error: 'Not found' });
+
+      // 2) If folder => 400
+      if (fileDoc.type === 'folder') {
+        return res.status(400).json({ error: "A folder doesn't have content" });
+      }
+
+      // 3) Authorization: if not public, only owner can access
+      if (!fileDoc.isPublic) {
+        const token = req.header('X-Token');
+        if (!token) return res.status(404).json({ error: 'Not found' });
+
+        const userId = await redisClient.get(`auth_${token}`);
+        if (!userId) return res.status(404).json({ error: 'Not found' });
+
+        // Ensure requester is the owner
+        const ownerId = (fileDoc.userId && fileDoc.userId.toString()) || '';
+        if (ownerId !== userId) return res.status(404).json({ error: 'Not found' });
+      }
+
+      // 4) Verify local file presence
+      const { localPath } = fileDoc;
+      if (!localPath || !fs.existsSync(localPath)) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      // 5) Set MIME type from file name and stream content
+      const contentType = mime.lookup(fileDoc.name) || 'application/octet-stream';
+      res.setHeader('Content-Type', contentType);
+
+      // Stream the file (handles text & binary)
+      const readStream = fs.createReadStream(localPath);
+      readStream.on('error', () => res.status(404).json({ error: 'Not found' }));
+      return readStream.pipe(res);
+    } catch (err) {
+      // Fallback – do not leak internals
+      return res.status(500).json({ error: 'Server error' });
     }
   }
 }
