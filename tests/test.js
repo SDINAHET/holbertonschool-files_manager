@@ -5,63 +5,47 @@ const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const redisMock = require('redis-mock');
 const proxyquire = require('proxyquire');
-const { ObjectId } = require('mongodb');
 const path = require('path');
 
 let app;
-let dbClient;      // proxy-required ../utils/db
-let redisClient;   // proxy-required ../utils/redis (with redis-mock)
+let dbClient;      // instance réelle chargée par l'app
+let redisClient;   // instance réelle chargée par l'app (mais redis mocké)
 let mongod;
 
-// ---------- Helpers (no optional chaining to satisfy older parsers) ----------
-function getHeader(req, name) {
-  if (req && req.header && typeof req.header === 'function') {
-    return req.header(name);
-  }
-  if (req && req.headers && Object.prototype.hasOwnProperty.call(req.headers, name.toLowerCase())) {
-    return req.headers[name.toLowerCase()];
-  }
-  return undefined;
-}
+/* ------------------------------ Helpers ------------------------------ */
 
-function loadApp() {
-  const candidates = ['../server', '../app'];
-  for (let i = 0; i < candidates.length; i += 1) {
-    try {
-      const mod = require(candidates[i]); // eslint-disable-line global-require, import/no-dynamic-require
-      return (mod && mod.default) ? mod.default : mod;
-    } catch (err) {
-      // continue to next candidate
-    }
-  }
-  throw new Error('Unable to load Express app. Export your Express instance from server.js or app.js');
-}
-
-/**
- * Resolve current user from X-Token header (Redis: auth_<token> -> userId) then fetch in Mongo.
- * Returns the user document or null.
- */
-async function getUserFromToken(req) {
-  const token = getHeader(req, 'X-Token');
-  if (!token) return null;
-
-  const userId = await redisClient.get(`auth_${token}`);
-  if (!userId) return null;
-
-  const usersCol = dbClient.db.collection('users'); // adjust if your dbClient exposes differently
-  const user = await usersCol.findOne({ _id: new ObjectId(userId) });
-  return user || null;
-}
-
-// Base64 helpers
+// Base64
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
 const b64data = (s) => Buffer.from(s, 'utf8').toString('base64');
 
-// ---------- Global setup / teardown ----------
-before(async function initSuite() {
-  this.timeout(20000);
+// Charge server/app en remplaçant tout require('redis') par redis-mock
+function loadAppWithRedisMock() {
+  const candidates = ['../server.js', '../server', '../app.js', '../app'];
+  for (let i = 0; i < candidates.length; i += 1) {
+    try {
+      // eslint-disable-next-line import/no-dynamic-require, global-require
+      const mod = proxyquire(candidates[i], { redis: redisMock });
+      return (mod && mod.default) ? mod.default : mod;
+    } catch (e) { /* try next candidate */ }
+  }
+  throw new Error('Export your Express instance from server.js or app.js');
+}
 
-  // Start in-memory Mongo
+// Récupère depuis le require cache un module dont le chemin matche la regex
+function findLoadedModule(regex) {
+  const keys = Object.keys(require.cache || {});
+  for (let i = 0; i < keys.length; i += 1) {
+    if (regex.test(keys[i])) return keys[i];
+  }
+  return null;
+}
+
+/* -------------------------- Global setup/teardown -------------------------- */
+
+before(async function initSuite() {
+  this.timeout(30000);
+
+  // Mongo en mémoire
   mongod = await MongoMemoryServer.create();
   const uri = mongod.getUri();
   process.env.DB_URI = uri;
@@ -70,47 +54,21 @@ before(async function initSuite() {
   process.env.DB_DATABASE = 'files_manager_test';
   process.env.NODE_ENV = 'test';
 
-  // Load utils with redis mocked (do not require at top to avoid double instances)
-  // redisClient = proxyquire('../utils/redis', { redis: redisMock });
-  // dbClient = proxyquire('../utils/db', {});
-    // ✅ par celles-ci (chemins robustes + extension .js)
-  // --- Robust resolver for different file names/cases/structures ---
-  function resolveFirstExisting(candidates) {
-    for (let i = 0; i < candidates.length; i += 1) {
-      const abs = path.resolve(__dirname, candidates[i]);
-      try {
-        // ensure it exists and is resolvable
-        // eslint-disable-next-line import/no-dynamic-require, global-require
-        require.resolve(abs);
-        return abs;
-      } catch (e) { /* try next */ }
-    }
-    throw new Error(`None of these modules could be resolved: ${candidates.join(', ')}`);
-  }
+  // 1) Charge l'app en mockant le package 'redis'
+  app = loadAppWithRedisMock();
 
-  // Try common file name variants used in Holberton/ALX projects
-  const redisCandidates = [
-    '../utils/redis.js',
-    '../utils/redis/index.js',
-    '../utils/redisClient.js',
-    '../utils/RedisClient.js',
-  ];
-  const dbCandidates = [
-    '../utils/db.js',
-    '../utils/db/index.js',
-    '../utils/dbClient.js',
-    '../utils/DBClient.js',
-  ];
+  // 2) Récupère les chemins réels de utils/redis* et utils/db* chargés par l'app
+  const redisPath = findLoadedModule(/[\\/]+utils[\\/].*redis.*\.js$/i);
+  const dbPath = findLoadedModule(/[\\/]+utils[\\/].*db.*\.js$/i);
 
-  const redisPath = resolveFirstExisting(redisCandidates);
-  const dbPath = resolveFirstExisting(dbCandidates);
+  if (!redisPath) throw new Error('Could not locate utils/redis*.js in require cache');
+  if (!dbPath) throw new Error('Could not locate utils/db*.js in require cache');
 
-  // Load utils with redis mocked (no double instances)
-  redisClient = proxyquire(redisPath, { redis: redisMock });
-  dbClient = proxyquire(dbPath, {});
-
-  // Load Express app
-  app = loadApp();
+  // 3) Charge ces instances (déjà câblées avec redis-mock via proxyquire)
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  redisClient = require(redisPath);
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  dbClient = require(dbPath);
 });
 
 after(async () => {
@@ -119,9 +77,8 @@ after(async () => {
   }
 });
 
-// ------------------------
-// Unit tests: redisClient
-// ------------------------
+/* ------------------------------ redisClient ------------------------------ */
+
 describe('redisClient', () => {
   it('isAlive() returns true', () => {
     expect(redisClient.isAlive()).to.be.true;
@@ -141,9 +98,8 @@ describe('redisClient', () => {
   });
 });
 
-// ------------------------
-// Unit tests: dbClient
-// ------------------------
+/* -------------------------------- dbClient -------------------------------- */
+
 describe('dbClient', () => {
   it('isAlive() returns true (connected)', () => {
     expect(dbClient.isAlive()).to.be.true;
@@ -157,9 +113,8 @@ describe('dbClient', () => {
   });
 });
 
-// ------------------------
-// API tests (endpoints)
-// ------------------------
+/* ------------------------------- API tests -------------------------------- */
+
 describe('API Endpoints', () => {
   let token;
   let userId;
@@ -267,7 +222,7 @@ describe('API Endpoints', () => {
     expect(res.body.isPublic).to.equal(false);
   });
 
-  it('GET /files/:id/data -> 200 (if public) or 403/404 depending on impl', async () => {
+  it('GET /files/:id/data -> 200 (if public) or 403/404 depending on impl)', async () => {
     // ensure public
     await request(app).put(`/files/${fileId}/publish`).set('X-Token', token);
     const res = await request(app).get(`/files/${fileId}/data`);
