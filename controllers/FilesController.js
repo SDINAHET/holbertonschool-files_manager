@@ -169,10 +169,10 @@ class FilesController {
       const matchByParent = isRoot
         ? { $or: [{ parentId: 0 }, { parentId: '0' }] }
         : {
-            parentId: ObjectId.isValid(parentId)
-              ? new ObjectId(parentId)
-              : parentId,
-          };
+          parentId: ObjectId.isValid(parentId)
+            ? new ObjectId(parentId)
+            : parentId,
+        };
 
       const docs = await dbClient.db.collection('files')
         .aggregate([
