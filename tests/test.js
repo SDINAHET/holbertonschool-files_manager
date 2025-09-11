@@ -1,4 +1,3 @@
-// tests/test.js
 /* eslint-disable no-unused-expressions */
 require('@babel/register'); // allow ES imports if used in the project
 
@@ -12,8 +11,8 @@ const fs = require('fs');
 const path = require('path');
 
 let app;
-let dbClient;    // utils/db* loaded instance
-let redisClient; // utils/redis* loaded instance (with redis mocked)
+let dbClient;    // normalized instance of utils/db*
+let redisClient; // normalized instance of utils/redis* (with redis mocked)
 let mongod;
 
 /* ------------------------------ helpers ------------------------------ */
@@ -40,24 +39,53 @@ function findFirstMatch(rootDir, regex) {
   return null;
 }
 
+/** Return an instance no matter if module exported an instance or a class */
+function normalizeUtil(mod) {
+  let m = mod && mod.default ? mod.default : mod;
+
+  // Common named exports patterns
+  if (m && typeof m === 'object') {
+    if (m.redisClient) m = m.redisClient;
+    if (m.dbClient) m = m.dbClient;
+  }
+
+  // If a class/constructor was exported, instantiate it
+  if (typeof m === 'function') {
+    try { return new m(); } catch (_e) { /* ignore */ }
+  }
+
+  // If object exposing a class under a name, try those
+  if (m && typeof m === 'object') {
+    const K = m.RedisClient || m.DBClient || m.Client;
+    if (typeof K === 'function') {
+      try { return new K(); } catch (_e) { /* ignore */ }
+    }
+  }
+
+  return m;
+}
+
 /** Build an Express app from routes/index.* without starting a real server */
 function buildAppFromRoutes() {
   const projectRoot = path.resolve(__dirname, '..');
 
   // 1) Prime utils with mocks BEFORE loading routes/controllers
   const utilsDir = path.join(projectRoot, 'utils');
-  const redisUtilPath = findFirstMatch(utilsDir, /(^|[\\/])redis.*\.mjs$/i);
-  const dbUtilPath = findFirstMatch(utilsDir, /(^|[\\/])db.*\.mjs$/i);
+  const redisUtilPath = findFirstMatch(utilsDir, /(^|[\\/])redis.*\.(mjs|js)$/i);
+  const dbUtilPath = findFirstMatch(utilsDir, /(^|[\\/])db.*\.(mjs|js)$/i);
 
-  if (!redisUtilPath) throw new Error('Could not locate utils/redis*.js');
-  if (!dbUtilPath) throw new Error('Could not locate utils/db*.js');
+  if (!redisUtilPath) throw new Error('Could not locate utils/redis*.mjs|js');
+  if (!dbUtilPath) throw new Error('Could not locate utils/db*.mjs|js');
 
   // Load redis util with the redis package mocked
   // eslint-disable-next-line import/no-dynamic-require, global-require
-  redisClient = proxyquire(redisUtilPath, { redis: redisMock });
+  const redisMod = proxyquire(redisUtilPath, { redis: redisMock });
+  redisClient = normalizeUtil(redisMod);
+
   // Load db util normally (it will read env we set in before())
   // eslint-disable-next-line import/no-dynamic-require, global-require
-  dbClient = require(dbUtilPath);
+  const dbMod = require(dbUtilPath);
+  dbClient = normalizeUtil(dbMod);
 
   // 2) Load routes
   const routesDir = path.join(projectRoot, 'routes');
