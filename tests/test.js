@@ -74,14 +74,40 @@ before(async function initSuite() {
   // redisClient = proxyquire('../utils/redis', { redis: redisMock });
   // dbClient = proxyquire('../utils/db', {});
     // ✅ par celles-ci (chemins robustes + extension .js)
-  redisClient = proxyquire(
-    path.resolve(__dirname, '../utils/redis.js'),
-    { redis: redisMock }
-  );
-  dbClient = proxyquire(
-    path.resolve(__dirname, '../utils/db.js'),
-    {}
-  );
+  // --- Robust resolver for different file names/cases/structures ---
+  function resolveFirstExisting(candidates) {
+    for (let i = 0; i < candidates.length; i += 1) {
+      const abs = path.resolve(__dirname, candidates[i]);
+      try {
+        // ensure it exists and is resolvable
+        // eslint-disable-next-line import/no-dynamic-require, global-require
+        require.resolve(abs);
+        return abs;
+      } catch (e) { /* try next */ }
+    }
+    throw new Error(`None of these modules could be resolved: ${candidates.join(', ')}`);
+  }
+
+  // Try common file name variants used in Holberton/ALX projects
+  const redisCandidates = [
+    '../utils/redis.js',
+    '../utils/redis/index.js',
+    '../utils/redisClient.js',
+    '../utils/RedisClient.js',
+  ];
+  const dbCandidates = [
+    '../utils/db.js',
+    '../utils/db/index.js',
+    '../utils/dbClient.js',
+    '../utils/DBClient.js',
+  ];
+
+  const redisPath = resolveFirstExisting(redisCandidates);
+  const dbPath = resolveFirstExisting(dbCandidates);
+
+  // Load utils with redis mocked (no double instances)
+  redisClient = proxyquire(redisPath, { redis: redisMock });
+  dbClient = proxyquire(dbPath, {});
 
   // Load Express app
   app = loadApp();
