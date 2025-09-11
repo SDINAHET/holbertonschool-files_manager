@@ -1901,3 +1901,6 @@ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_ma
 ```bash
 
 ```
+
+# Task 10
+        // "test": "./node_modules/.bin/mocha --require @babel/register --exit",
