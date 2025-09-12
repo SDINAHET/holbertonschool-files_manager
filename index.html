@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Statut CI/CD - Files Manager</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin-top: 50px;
+      background: #f6f8fa;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      color: #24292e;
+    }
+
+    #fm-ci {
+      text-align: center;
+    }
+
+    /* Loader animé */
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #2da44e;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Style de la pastille */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .5rem 1rem;
+      border: 1px solid #d0d7de;
+      border-radius: 999px;
+      background: #fff;
+      font-size: 14px;
+      text-decoration: none;
+      color: #24292e;
+      transition: box-shadow 0.2s;
+    }
+
+    .pill:hover {
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .dot {
+      width: .6rem;
+      height: .6rem;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .dot.success { background: #2da44e; }
+    .dot.failure { background: #d1242f; }
+    .dot.progress { background: #6e7781; }
+
+    /* Badge */
+    .badge {
+      margin-top: .8rem;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <h1>Statut CI/CD - Files Manager</h1>
+
+  <div id="fm-ci">
+    <div class="loader"></div>
+  </div>
+
+  <script>
+  (async () => {
+    const owner = "SDINAHET";
+    const repo  = "holbertonschool-files_manager";
+    const root  = `https://api.github.com/repos/${owner}/${repo}/actions`;
+
+    try {
+      // Dernier run
+      const runsRes = await fetch(`${root}/runs?per_page=1`);
+      const runs = await runsRes.json();
+      const run = runs.workflow_runs?.[0];
+
+      let pill = "<p>Aucun run CI trouvé.</p>";
+      if (run) {
+        const status = run.conclusion || run.status; // success, failure, in_progress
+        const cls = status === "success" ? "success" : (status === "failure" ? "failure" : "progress");
+        const when = new Date(run.updated_at || run.created_at).toLocaleString();
+
+        pill = `
+          <a href="${run.html_url}" target="_blank" class="pill">
+            <span class="dot ${cls}"></span>
+            <strong>${repo}</strong> • ${status.replaceAll("_"," ")} • ${when}
+          </a>
+        `;
+      }
+
+      // Badge
+      let badgeHtml = "";
+      const wRes = await fetch(`${root}/workflows`);
+      const w = await wRes.json();
+      const wf = w.workflows?.sort((a,b)=>new Date(b.updated_at)-new Date(a.updated_at))[0];
+      if (wf) {
+        const badgeUrl = `https://github.com/${owner}/${repo}/actions/workflows/${wf.path}/badge.svg`;
+        const pageUrl  = `https://github.com/${owner}/${repo}/actions/workflows/${wf.path}`;
+        badgeHtml = `
+          <a href="${pageUrl}" target="_blank" class="badge">
+            <img alt="CI status badge" src="${badgeUrl}">
+          </a>
+          <small style="opacity:.7">(${wf.name})</small>
+        `;
+      }
+
+      document.getElementById("fm-ci").innerHTML = pill + badgeHtml;
+    } catch (e) {
+      document.getElementById("fm-ci").innerHTML = "<p>Erreur de chargement du statut CI/CD.</p>";
+    }
+  })();
+  </script>
+</body>
+</html>
