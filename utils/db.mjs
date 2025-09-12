@@ -14,7 +14,11 @@ class DBClient {
     this.db = null;
 
     const url = `mongodb://${host}:${port}`;
-    this.client = new MongoClient(url);
+    // this.client = new MongoClient(url);
+    this.client = new MongoClient(url, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
 
     this.client.connect()
       .then(() => {
