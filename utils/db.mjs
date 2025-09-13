@@ -20,6 +20,7 @@ class DBClient {
       useUnifiedTopology: true,
       // ⬇️ coupe court si Mongo n’est pas dispo dans la sandbox
       serverSelectionTimeoutMS: 800, // ~0.8 s
+      directConnection: true, // ⬅️ évite la découverte inutile d’un cluster
     });
 
     this.client.connect()
