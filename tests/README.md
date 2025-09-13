@@ -515,3 +515,47 @@ describe('Files API', () => {
     });
   });
 });
+
+
+
+
+
+
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# ./node_modules/.bin/mocha --require @babel/register --timeout 20000 --exit \
+  tests/noQuery_get_files.test.cjs
+
+
+  GET /files sans parentId ni page
+    1) retourne 200 et un tableau
+
+
+  0 passing (52ms)
+  1 failing
+
+  1) GET /files sans parentId ni page
+       retourne 200 et un tableau:
+
+      AssertionError [ERR_ASSERTION]: HTTP status doit être 200
+
+401 !== 200
+
+      + expected - actual
+
+      -401
+      +200
+
+      at Context.<anonymous> (tests/noQuery_get_files.test.cjs:18:12)
+      at processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# ./node_modules/.bin/mocha --require @babel/register --timeout 20000 --exit   tests/noQuery_get_files.test.cjs
+
+
+  GET /files sans parentId ni page
+    ✔ retourne 200 et un tableau (71ms)
+
+
+  1 passing (74ms)
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# 
