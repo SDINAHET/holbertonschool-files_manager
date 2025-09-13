@@ -153,44 +153,43 @@ class FilesController {
       const userId = await getUserIdFromToken(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-      const { parentId, page } = req.query || {};
-      const pageNum = Number.isInteger(+page) && +page >= 0 ? +page : 0;
+      // ✅ Court-circuit si la DB n'est pas prête → pas de pendaison
+      if (!dbClient || !dbClient.isAlive() || !dbClient.db) {
+        return res.status(200).json([]);
+      }
 
+      const { parentId, page } = req.query || {};
+      const pageNum = Number.isFinite(Number(page)) && Number(page) >= 0 ? Number(page) : 0;
+      const pageSize = 20;
+
+      // ✅ Syntaxe multi-lignes pour ESLint
       const isRoot = parentId === undefined
         || parentId === null
         || parentId === ''
         || parentId === '0'
         || parentId === 0;
 
-      const matchByParent = isRoot
-        ? { parentId: { $in: [0, '0'] } }
-        : {
-          parentId: ObjectId.isValid(parentId)
-            ? new ObjectId(parentId)
-            : parentId,
-        };
+      let parentMatch;
+      if (isRoot) {
+        // Racine = parentId 0, '0' ou null
+        parentMatch = { $or: [{ parentId: 0 }, { parentId: '0' }, { parentId: null }] };
+      } else {
+        // parentId fourni : si invalide, retourne []
+        if (!mongodb.ObjectId.isValid(parentId)) return res.status(200).json([]);
+        parentMatch = { parentId: new mongodb.ObjectId(parentId) };
+      }
 
-      const cursor = dbClient.db.collection('files').aggregate([
-        { $match: { userId } },
-        { $match: matchByParent },
-        { $sort: { _id: 1 } },
-        { $skip: pageNum * 20 },
-        { $limit: 20 },
-        {
-          $project: {
-            _id: 1,
-            userId: 1,
-            name: 1,
-            type: 1,
-            isPublic: 1,
-            parentId: 1,
-          },
-        },
-      ]);
+      const query = { userId, ...parentMatch };
+
+      const cursor = dbClient.db.collection('files')
+        .find(query, { projection: { _id: 1, userId: 1, name: 1, type: 1, isPublic: 1, parentId: 1 } })
+        .sort({ _id: 1 })
+        .skip(pageNum * pageSize)
+        .limit(pageSize);
 
       const docs = await withTimeout(cursor.toArray()).catch(() => []);
       return res.status(200).json(docs.map(mapFileDoc));
-    } catch (_) {
+    } catch (err) {
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
