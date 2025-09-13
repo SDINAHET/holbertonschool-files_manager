@@ -153,7 +153,7 @@ class FilesController {
       const userId = await getUserIdFromToken(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-      // ✅ Court-circuit si la DB n'est pas prête → pas de pendaison
+      // DB pas prête -> répondre vite
       if (!dbClient || !dbClient.isAlive() || !dbClient.db) {
         return res.status(200).json([]);
       }
@@ -162,7 +162,6 @@ class FilesController {
       const pageNum = Number.isFinite(Number(page)) && Number(page) >= 0 ? Number(page) : 0;
       const pageSize = 20;
 
-      // ✅ Syntaxe multi-lignes pour ESLint
       const isRoot = parentId === undefined
         || parentId === null
         || parentId === ''
@@ -171,18 +170,37 @@ class FilesController {
 
       let parentMatch;
       if (isRoot) {
-        // Racine = parentId 0, '0' ou null
-        parentMatch = { $or: [{ parentId: 0 }, { parentId: '0' }, { parentId: null }] };
+        parentMatch = {
+          $or: [
+            { parentId: 0 },
+            { parentId: '0' },
+            { parentId: null },
+          ],
+        };
       } else {
-        // parentId fourni : si invalide, retourne []
-        if (!mongodb.ObjectId.isValid(parentId)) return res.status(200).json([]);
+        if (!mongodb.ObjectId.isValid(parentId)) {
+          // parentId fourni mais non lié/valide -> liste vide
+          return res.status(200).json([]);
+        }
         parentMatch = { parentId: new mongodb.ObjectId(parentId) };
       }
 
       const query = { userId, ...parentMatch };
 
       const cursor = dbClient.db.collection('files')
-        .find(query, { projection: { _id: 1, userId: 1, name: 1, type: 1, isPublic: 1, parentId: 1 } })
+        .find(
+          query,
+          {
+            projection: {
+              _id: 1,
+              userId: 1,
+              name: 1,
+              type: 1,
+              isPublic: 1,
+              parentId: 1,
+            },
+          },
+        )
         .sort({ _id: 1 })
         .skip(pageNum * pageSize)
         .limit(pageSize);
