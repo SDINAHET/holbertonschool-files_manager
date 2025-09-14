@@ -9,7 +9,7 @@ import dbClient from '../utils/db';
 
 const { ObjectId } = mongodb;
 const VALID_TYPES = new Set(['folder', 'file', 'image']);
-const IO_TIMEOUT_MS = 10000; // 2000
+const IO_TIMEOUT_MS = 1000; // 2000
 
 // Small helpers to avoid hangs
 const withTimeout = (p, ms = IO_TIMEOUT_MS) => Promise.race([
