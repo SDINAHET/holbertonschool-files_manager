@@ -98,8 +98,11 @@ function buildAppFromRoutes() {
 
   // Load db util normally (it will read env we set in before())
   // eslint-disable-next-line import/no-dynamic-require, global-require
+  // const dbMod = require(dbUtilPath);
+  // dbClient = normalizeUtil(dbMod);
   const dbMod = require(dbUtilPath);
-  dbClient = normalizeUtil(dbMod);
+  dbClient = dbMod.default || dbMod;
+  if (dbClient.dbClient) dbClient = dbClient.dbClient; // si ton util expose { dbClient: ... }
 
   // 2) Load routes
   const routesDir = path.join(projectRoot, 'routes');
