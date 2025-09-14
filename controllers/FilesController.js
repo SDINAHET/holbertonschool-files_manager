@@ -147,21 +147,86 @@ class FilesController {
     }
   }
 
+  // /* ------------------------------ GET /files ----------------------------- */
+  // static async getIndex(req, res) {
+  //   try {
+  //     const userId = await getUserIdFromToken(req);
+  //     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  //     // DB pas prête -> répondre vite
+  //     if (!dbClient || !dbClient.isAlive() || !dbClient.db) {
+  //       return res.status(200).json([]);
+  //     }
+
+  //     const { parentId, page } = req.query || {};
+  //     const pageNum = Number.isFinite(Number(page)) && Number(page) >= 0 ? Number(page) : 0;
+  //     const pageSize = 20;
+
+  //     const isRoot = parentId === undefined
+  //       || parentId === null
+  //       || parentId === ''
+  //       || parentId === '0'
+  //       || parentId === 0;
+
+  //     let parentMatch;
+  //     if (isRoot) {
+  //       parentMatch = {
+  //         $or: [
+  //           { parentId: 0 },
+  //           { parentId: '0' },
+  //           { parentId: null },
+  //         ],
+  //       };
+  //     } else {
+  //       if (!mongodb.ObjectId.isValid(parentId)) {
+  //         // parentId fourni mais non lié/valide -> liste vide
+  //         return res.status(200).json([]);
+  //       }
+  //       parentMatch = { parentId: new mongodb.ObjectId(parentId) };
+  //     }
+
+  //     const query = { userId, ...parentMatch };
+
+  //     const cursor = dbClient.db.collection('files')
+  //       .find(
+  //         query,
+  //         {
+  //           projection: {
+  //             _id: 1,
+  //             userId: 1,
+  //             name: 1,
+  //             type: 1,
+  //             isPublic: 1,
+  //             parentId: 1,
+  //           },
+  //         },
+  //       )
+  //       .sort({ _id: 1 })
+  //       .skip(pageNum * pageSize)
+  //       .limit(pageSize);
+
+  //     const docs = await withTimeout(cursor.toArray()).catch(() => []);
+  //     return res.status(200).json(docs.map(mapFileDoc));
+  //   } catch (err) {
+  //     return res.status(500).json({ error: 'Internal Server Error' });
+  //   }
+  // }
+
   /* ------------------------------ GET /files ----------------------------- */
   static async getIndex(req, res) {
     try {
       const userId = await getUserIdFromToken(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-      // DB pas prête -> répondre vite
       if (!dbClient || !dbClient.isAlive() || !dbClient.db) {
         return res.status(200).json([]);
       }
 
       const { parentId, page } = req.query || {};
-      const pageNum = Number.isFinite(Number(page)) && Number(page) >= 0 ? Number(page) : 0;
+      const pageNum = Number.isInteger(Number(page)) && Number(page) >= 0 ? Number(page) : 0;
       const pageSize = 20;
 
+      // Si parentId absent → root
       const isRoot = parentId === undefined
         || parentId === null
         || parentId === ''
@@ -175,37 +240,39 @@ class FilesController {
             { parentId: 0 },
             { parentId: '0' },
             { parentId: null },
+            { parentId: { $exists: false } },
           ],
         };
       } else {
         if (!mongodb.ObjectId.isValid(parentId)) {
-          // parentId fourni mais non lié/valide -> liste vide
           return res.status(200).json([]);
         }
         parentMatch = { parentId: new mongodb.ObjectId(parentId) };
       }
 
-      const query = { userId, ...parentMatch };
-
-      const cursor = dbClient.db.collection('files')
-        .find(
-          query,
-          {
-            projection: {
-              _id: 1,
-              userId: 1,
-              name: 1,
-              type: 1,
-              isPublic: 1,
-              parentId: 1,
-            },
+      const pipeline = [
+        { $match: { userId, ...parentMatch } },
+        { $sort: { _id: 1 } },
+        { $skip: pageNum * pageSize },
+        { $limit: pageSize },
+        {
+          $project: {
+            _id: 1,
+            userId: 1,
+            name: 1,
+            type: 1,
+            isPublic: 1,
+            parentId: 1,
           },
-        )
-        .sort({ _id: 1 })
-        .skip(pageNum * pageSize)
-        .limit(pageSize);
+        },
+      ];
 
-      const docs = await withTimeout(cursor.toArray()).catch(() => []);
+      const cursor = dbClient.db
+        .collection('files')
+        .aggregate(pipeline, { maxTimeMS: 1500 });
+
+      const docs = await withTimeout(cursor.toArray(), 2000).catch(() => []);
+
       return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
       return res.status(500).json({ error: 'Internal Server Error' });

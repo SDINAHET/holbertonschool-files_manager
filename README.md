@@ -1904,3 +1904,41 @@ root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_ma
 
 # Task 10
         // "test": "./node_modules/.bin/mocha --require @babel/register --exit",
+
+
+
+```bash
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -v -X GET "0.0.0.0:5000/files" -H "X-Token: $TOKEN" --max-time 5
+Note: Unnecessary use of -X or --request, GET is already inferred.
+*   Trying 0.0.0.0:5000...
+* Connected to 0.0.0.0 (127.0.0.1) port 5000 (#0)
+> GET /files HTTP/1.1
+> Host: 0.0.0.0:5000
+> User-Agent: curl/7.81.0
+> Accept: */*
+> X-Token: ab039efe-747d-44ab-b2e1-025edd5d63af
+>
+* Mark bundle as not supporting multiuse
+< HTTP/1.1 200 OK
+< X-Powered-By: Express
+< Content-Type: application/json; charset=utf-8
+< Content-Length: 2687
+< ETag: W/"a7f-Lyq4NLuCSCgGHtjcEQYdkT+Y5xU"
+< Date: Sun, 14 Sep 2025 17:47:07 GMT
+< Connection: keep-alive
+< Keep-Alive: timeout=5
+<
+[{"id":"68b8cba5005c9d250bd0231d","userId":"68b853b17fa64416588891c1","name":"myText.txt","type":"file","isPublic":false,"parentId":0},{"id":"68b8cc78005c9d250bd0231e","userId":"68b853b17fa64416588891c1","name":"images","type":"folder","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22709","userId":"68b853b17fa64416588891c1","name":"root_0.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c2270a","userId":"68b853b17fa64416588891c1","name":"root_1.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c2270b","userId":"68b853b17fa64416588891c1","name":"root_2.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c2270c","userId":"68b853b17fa64416588891c1","name":"root_3.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c2270d","userId":"68b853b17fa64416588891c1","name":"root_4.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c2270e","userId":"68b853b17fa64416588891c1","name":"root_5.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c2270f","userId":"68b853b17fa64416588891c1","name":"root_6.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22710","userId":"68b853b17fa64416588891c1","name":"root_7.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22711","userId":"68b853b17fa64416588891c1","name":"root_8.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22712","userId":"68b853b17fa64416588891c1","name":"root_9.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22713","userId":"68b853b17fa64416588891c1","name":"root_10.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22714","userId":"68b853b17fa64416588891c1","name":"root_11.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22715","userId":"68b853b17fa64416588891c1","name":"root_12.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22716","us* Connection #0 to host 0.0.0.0 left intact
+erId":"68b853b17fa64416588891c1","name":"root_13.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22717","userId":"68b853b17fa64416588891c1","name":"root_14.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22718","userId":"68b853b17fa64416588891c1","name":"root_15.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c22719","userId":"68b853b17fa64416588891c1","name":"root_16.txt","type":"file","isPublic":false,"parentId":0},{"id":"68c1bd7013b5c216a8c2271a","userId":"68b853b17fa64416588891c1","name":"root_17.txt","type":"file","isPublic":false,"parentId":0}]
+
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -s -X GET "0.0.0.0:5000/files?page=1" -H "X-Tokencurl -s -X GET "0.0.0.0:5000/files?page=1" -H "X-Token: $TOKEN" | jq length
+20
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -s -X GET "0.0.0.0:5000/files?page=2" -H "X-Token: $TOKEN" | jq length
+20
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -s -X GET "0.0.0.0:5000/files?page=999" -H "X-Token: $TOKEN" | jq .
+[]
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager# curl -s -X GET "0.0.0.0:5000/files?parentId=notAnObjectId" -H "X-Token: $TOKEN" | jq .
+[]
+root@UID7E:/mnt/d/Users/steph/Documents/5ème_trimestre/holbertonschool-files_manager#
+```
+
