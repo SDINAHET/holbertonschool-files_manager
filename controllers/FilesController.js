@@ -428,91 +428,91 @@ class FilesController {
   //   }
   // }
 
-  // /* --------------------------- GET /files/:id ---------------------------- */
-  // static async getShow(req, res) {
-  //   try {
-  //     const userId = await getUserIdFromToken(req);
-  //     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  /* --------------------------- GET /files/:id ---------------------------- */
+  static async getShow(req, res) {
+    try {
+      const userId = await getUserIdFromToken(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  //     let fileId;
-  //     try {
-  //       fileId = new ObjectId(req.params.id);
-  //     } catch (_) {
-  //       return res.status(404).json({ error: 'Not found' });
-  //     }
+      let fileId;
+      try {
+        fileId = new ObjectId(req.params.id);
+      } catch (_) {
+        return res.status(404).json({ error: 'Not found' });
+      }
 
-  //     const doc = await withTimeout(
-  //       dbClient.db.collection('files').findOne({ _id: fileId, userId }),
-  //     ).catch(() => null);
+      const doc = await withTimeout(
+        dbClient.db.collection('files').findOne({ _id: fileId, userId }),
+      ).catch(() => null);
 
-  //     if (!doc) return res.status(404).json({ error: 'Not found' });
-  //     return res.status(200).json(mapFileDoc(doc));
-  //   } catch (_) {
-  //     return res.status(500).json({ error: 'Internal Server Error' });
-  //   }
-  // }
+      if (!doc) return res.status(404).json({ error: 'Not found' });
+      return res.status(200).json(mapFileDoc(doc));
+    } catch (_) {
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
 
-  // /* ----------------------- PUT /files/:id/publish ------------------------ */
-  // static async putPublish(req, res) {
-  //   try {
-  //     const userId = await getUserIdFromToken(req);
-  //     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  /* ----------------------- PUT /files/:id/publish ------------------------ */
+  static async putPublish(req, res) {
+    try {
+      const userId = await getUserIdFromToken(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  //     let fileId;
-  //     try {
-  //       fileId = new ObjectId(req.params.id);
-  //     } catch (_) {
-  //       return res.status(404).json({ error: 'Not found' });
-  //     }
+      let fileId;
+      try {
+        fileId = new ObjectId(req.params.id);
+      } catch (_) {
+        return res.status(404).json({ error: 'Not found' });
+      }
 
-  //     const col = dbClient.db.collection('files');
-  //     const owned = await withTimeout(
-  //       col.findOne({ _id: fileId, userId }),
-  //     ).catch(() => null);
+      const col = dbClient.db.collection('files');
+      const owned = await withTimeout(
+        col.findOne({ _id: fileId, userId }),
+      ).catch(() => null);
 
-  //     if (!owned) return res.status(404).json({ error: 'Not found' });
+      if (!owned) return res.status(404).json({ error: 'Not found' });
 
-  //     await withTimeout(col.updateOne({ _id: fileId }, { $set: { isPublic: true } }));
-  //     const updated = await withTimeout(col.findOne({ _id: fileId }));
-  //     return res.status(200).json(mapFileDoc(updated));
-  //   } catch (err) {
-  //     // eslint-disable-next-line no-console
-  //     console.error('FilesController.putPublish error:', err);
-  //     return res.status(500).json({ error: 'Internal Server Error' });
-  //   }
-  // }
+      await withTimeout(col.updateOne({ _id: fileId }, { $set: { isPublic: true } }));
+      const updated = await withTimeout(col.findOne({ _id: fileId }));
+      return res.status(200).json(mapFileDoc(updated));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('FilesController.putPublish error:', err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
 
-  // /* --------------------- PUT /files/:id/unpublish ------------------------ */
-  // static async putUnpublish(req, res) {
-  //   try {
-  //     const userId = await getUserIdFromToken(req);
-  //     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  /* --------------------- PUT /files/:id/unpublish ------------------------ */
+  static async putUnpublish(req, res) {
+    try {
+      const userId = await getUserIdFromToken(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  //     let fileId;
-  //     try {
-  //       fileId = new ObjectId(req.params.id);
-  //     } catch (_) {
-  //       return res.status(404).json({ error: 'Not found' });
-  //     }
+      let fileId;
+      try {
+        fileId = new ObjectId(req.params.id);
+      } catch (_) {
+        return res.status(404).json({ error: 'Not found' });
+      }
 
-  //     const col = dbClient.db.collection('files');
-  //     const owned = await withTimeout(
-  //       col.findOne({ _id: fileId, userId }),
-  //     ).catch(() => null);
+      const col = dbClient.db.collection('files');
+      const owned = await withTimeout(
+        col.findOne({ _id: fileId, userId }),
+      ).catch(() => null);
 
-  //     if (!owned) return res.status(404).json({ error: 'Not found' });
+      if (!owned) return res.status(404).json({ error: 'Not found' });
 
-  //     await withTimeout(
-  //       col.updateOne({ _id: fileId }, { $set: { isPublic: false } }),
-  //     );
-  //     const updated = await withTimeout(col.findOne({ _id: fileId }));
-  //     return res.status(200).json(mapFileDoc(updated));
-  //   } catch (err) {
-  //     // eslint-disable-next-line no-console
-  //     console.error('FilesController.putUnpublish error:', err);
-  //     return res.status(500).json({ error: 'Internal Server Error' });
-  //   }
-  // }
+      await withTimeout(
+        col.updateOne({ _id: fileId }, { $set: { isPublic: false } }),
+      );
+      const updated = await withTimeout(col.findOne({ _id: fileId }));
+      return res.status(200).json(mapFileDoc(updated));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('FilesController.putUnpublish error:', err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
 
   /* ------------------------- GET /files/:id/data ------------------------- */
   static async getFile(req, res) {
