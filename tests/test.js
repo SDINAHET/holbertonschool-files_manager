@@ -260,6 +260,49 @@ describe('API Endpoints', () => {
     fileId = res.body.id;
   });
 
+  // --------------------------------------------------
+  // --- 👇 AJOUTER ICI : tests GET /files sans query / parentId invalide / DB down ---
+  it('GET /files with no query -> 200 (root, page=0) and returns an array', async function () {
+    this.timeout(4000); // marge de sécurité
+    const res = await request(app).get('/files').set('X-Token', token);
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an('array');
+    // au max 20 éléments sur la page 0
+    expect(res.body.length).to.be.at.most(20);
+  });
+
+  it('GET /files with invalid parentId -> 200 and [] quickly', async function () {
+    this.timeout(3000);
+    const t0 = Date.now();
+    const res = await request(app)
+      .get('/files')
+      .set('X-Token', token)
+      .query({ parentId: 'not-a-valid-objectid' }); // parentId invalide
+    const dt = Date.now() - t0;
+
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an('array').that.has.length(0);
+    expect(dt).to.be.below(2000); // ne doit pas traîner
+  });
+
+  it('GET /files when DB not alive -> 200 and [] quickly', async function () {
+    this.timeout(3000);
+    const originalIsAlive = dbClient.isAlive.bind(dbClient);
+    dbClient.isAlive = () => false; // simule une DB non prête
+
+    const t0 = Date.now();
+    const res = await request(app).get('/files').set('X-Token', token);
+    const dt = Date.now() - t0;
+
+    // restore
+    dbClient.isAlive = originalIsAlive;
+
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an('array').that.has.length(0);
+    expect(dt).to.be.below(2000);
+  });
+  // --------------------------------------------------
+
   it('GET /files/:id -> 200 (metadata)', async () => {
     const res = await request(app)
       .get(`/files/${fileId}`)
