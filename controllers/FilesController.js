@@ -352,9 +352,9 @@ class FilesController {
       //   cursor.toArray(),
       //   new Promise((resolve) => setTimeout(() => resolve([]), 1000)),
       // ]);
-      const toArrayPromise = cursor.toArray().catch(() => []);
-      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve([]), 1000));
-      const docs = await Promise.race([toArrayPromise, timeoutPromise]);
+      // const toArrayPromise = cursor.toArray().catch(() => []);
+      // const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve([]), 1000));
+      // const docs = await Promise.race([toArrayPromise, timeoutPromise]);
 
       return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
