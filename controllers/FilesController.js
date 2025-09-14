@@ -343,7 +343,9 @@ class FilesController {
         },
       ];
 
+      // const cursor = dbClient.db.collection('files').aggregate(pipeline, { maxTimeMS: 1500 });
       const cursor = dbClient.db.collection('files').aggregate(pipeline, { maxTimeMS: 1500 });
+      const docs = await withTimeout(cursor.toArray(), 1500).catch(() => []);
 
       // // Répond en ≤ 1s même si Mongo rame
       // const docs = await Promise.race([
