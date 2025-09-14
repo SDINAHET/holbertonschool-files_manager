@@ -345,11 +345,14 @@ class FilesController {
 
       const cursor = dbClient.db.collection('files').aggregate(pipeline, { maxTimeMS: 1500 });
 
-      // Répond en ≤ 1s même si Mongo rame
-      const docs = await Promise.race([
-        cursor.toArray(),
-        new Promise((resolve) => setTimeout(() => resolve([]), 1000)),
-      ]);
+      // // Répond en ≤ 1s même si Mongo rame
+      // const docs = await Promise.race([
+      //   cursor.toArray(),
+      //   new Promise((resolve) => setTimeout(() => resolve([]), 1000)),
+      // ]);
+      const toArrayPromise = cursor.toArray().catch(() => []);
+      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve([]), 1000));
+      const docs = await Promise.race([toArrayPromise, timeoutPromise]);
 
       return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
