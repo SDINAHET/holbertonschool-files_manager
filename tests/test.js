@@ -328,6 +328,36 @@ describe('API Endpoints', () => {
   //   expect(res.body).to.be.an('array').that.has.length(0);
   //   expect(dt).to.be.below(2000);
   // });
+
+  it('GET /files with invalid parentId -> 200 and [] quickly', async function () {
+    this.timeout(3000);
+    const t0 = Date.now();
+    const res = await request(app).get('/files').set('X-Token', token).query({ parentId: 'not-a-valid-objectid' });
+    const dt = Date.now() - t0;
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an('array').that.has.length(0);
+    expect(dt).to.be.below(2000);
+  });
+
+  it('GET /files when DB not alive -> 200 and [] quickly', async function () {
+    this.timeout(3000);
+    const originalIsAlive = dbClient.isAlive;
+    const originalDb = dbClient.db;
+    dbClient.isAlive = () => false;
+    dbClient.db = null;
+
+    const t0 = Date.now();
+    const res = await request(app).get('/files').set('X-Token', token);
+    const dt = Date.now() - t0;
+
+    dbClient.isAlive = originalIsAlive;
+    dbClient.db = originalDb;
+
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an('array').that.has.length(0);
+    expect(dt).to.be.below(2000);
+  });
+
   // --------------------------------------------------
 
   it('GET /files/:id -> 200 (metadata)', async () => {
