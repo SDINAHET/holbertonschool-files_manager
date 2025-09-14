@@ -271,7 +271,12 @@ class FilesController {
         .collection('files')
         .aggregate(pipeline, { maxTimeMS: 1500 });
 
-      const docs = await withTimeout(cursor.toArray(), 2000).catch(() => []);
+      // const docs = await withTimeout(cursor.toArray(), 2000).catch(() => []);
+
+      const docs = await Promise.race([
+        cursor.toArray(),
+        new Promise((resolve) => setTimeout(() => resolve([]), 1000)),
+      ]);
 
       return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
