@@ -288,51 +288,121 @@ class FilesController {
   //   }
   // }
 
+  // /* ------------------------------ GET /files ----------------------------- */
+  // static async getIndex(req, res) {
+  //   try {
+  //     const userId = await getUserIdFromToken(req);
+  //     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  //     // if (!dbClient?.isAlive() || !dbClient.db) {
+  //     //   return res.status(200).json([]);
+  //     // }
+
+  //     if (!dbClient || !dbClient.isAlive() || !dbClient.db) {
+  //       return res.status(200).json([]);
+  //     }
+
+  //     const { parentId, page } = req.query || {};
+  //     const pageNum = Number.isInteger(Number(page)) && Number(page) >= 0 ? Number(page) : 0;
+  //     const pageSize = 20;
+
+  //     // root si parentId absent/0
+  //     const isRoot = [undefined, null, '', '0', 0].includes(parentId);
+
+  //     let parentMatch;
+  //     if (isRoot) {
+  //       parentMatch = {
+  //         $or: [
+  //           { parentId: 0 },
+  //           { parentId: '0' },
+  //           { parentId: null },
+  //           { parentId: { $exists: false } },
+  //         ],
+  //       };
+  //     } else {
+  //       if (!mongodb.ObjectId.isValid(parentId)) {
+  //         return res.status(200).json([]);
+  //       }
+  //       parentMatch = { parentId: new mongodb.ObjectId(parentId) };
+  //     }
+
+  //     const pipeline = [
+  //       { $match: { userId, ...parentMatch } },
+  //       { $sort: { _id: 1 } },
+  //       { $skip: pageNum * pageSize },
+  //       { $limit: pageSize },
+  //       {
+  //         $project: {
+  //           _id: 1,
+  //           userId: 1,
+  //           name: 1,
+  //           type: 1,
+  //           isPublic: 1,
+  //           parentId: 1,
+  //         },
+  //       },
+  //     ];
+
+  //     // const cursor = dbClient.db.collection('files').aggregate(pipeline, { maxTimeMS: 1500 });
+  //     const cursor = dbClient.db.collection('files').aggregate(pipeline, { maxTimeMS: 1500 });
+  //     const docs = await withTimeout(cursor.toArray(), 1500).catch(() => []);
+
+  //     // // Répond en ≤ 1s même si Mongo rame
+  //     // const docs = await Promise.race([
+  //     //   cursor.toArray(),
+  //     //   new Promise((resolve) => setTimeout(() => resolve([]), 1000)),
+  //     // ]);
+  //     // const toArrayPromise = cursor.toArray().catch(() => []);
+  //     // const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve([]), 1000));
+  //     // const docs = await Promise.race([toArrayPromise, timeoutPromise]);
+
+  //     return res.status(200).json(docs.map(mapFileDoc));
+  //   } catch (err) {
+  //     return res.status(500).json({ error: 'Internal Server Error' });
+  //   }
+  // }
+
   /* ------------------------------ GET /files ----------------------------- */
   static async getIndex(req, res) {
     try {
+      // 1) Auth
       const userId = await getUserIdFromToken(req);
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-      // if (!dbClient?.isAlive() || !dbClient.db) {
-      //   return res.status(200).json([]);
-      // }
-
-      if (!dbClient || !dbClient.isAlive() || !dbClient.db) {
+      // 2) DB pas prête → répond vite
+      if (!dbClient || typeof dbClient.isAlive !== 'function' || !dbClient.isAlive() || !dbClient.db) {
         return res.status(200).json([]);
       }
 
+      // 3) Query params
       const { parentId, page } = req.query || {};
       const pageNum = Number.isInteger(Number(page)) && Number(page) >= 0 ? Number(page) : 0;
       const pageSize = 20;
 
-      // root si parentId absent/0
+      // 4) Filtre parent (root si parentId absent/0)
       const isRoot = [undefined, null, '', '0', 0].includes(parentId);
+      let query = { userId };
 
-      let parentMatch;
       if (isRoot) {
-        parentMatch = {
-          $or: [
-            { parentId: 0 },
-            { parentId: '0' },
-            { parentId: null },
-            { parentId: { $exists: false } },
-          ],
-        };
+        // les racines peuvent être stockées comme 0 / "0" / null
+        query.$or = [
+          { parentId: 0 },
+          { parentId: '0' },
+          { parentId: null },
+          { parentId: { $exists: false } },
+        ];
       } else {
         if (!mongodb.ObjectId.isValid(parentId)) {
+          // parentId fourni mais invalide -> liste vide (et vite)
           return res.status(200).json([]);
         }
-        parentMatch = { parentId: new mongodb.ObjectId(parentId) };
+        query.parentId = new mongodb.ObjectId(parentId);
       }
 
-      const pipeline = [
-        { $match: { userId, ...parentMatch } },
-        { $sort: { _id: 1 } },
-        { $skip: pageNum * pageSize },
-        { $limit: pageSize },
-        {
-          $project: {
+      // 5) Lecture + projection + pagination
+      const cursor = dbClient.db.collection('files')
+        .find(query, {
+          projection: {
             _id: 1,
             userId: 1,
             name: 1,
@@ -340,21 +410,16 @@ class FilesController {
             isPublic: 1,
             parentId: 1,
           },
-        },
-      ];
+        })
+        .sort({ _id: 1 })
+        .skip(pageNum * pageSize)
+        .limit(pageSize);
 
-      // const cursor = dbClient.db.collection('files').aggregate(pipeline, { maxTimeMS: 1500 });
-      const cursor = dbClient.db.collection('files').aggregate(pipeline, { maxTimeMS: 1500 });
-      const docs = await withTimeout(cursor.toArray(), 1500).catch(() => []);
-
-      // // Répond en ≤ 1s même si Mongo rame
-      // const docs = await Promise.race([
-      //   cursor.toArray(),
-      //   new Promise((resolve) => setTimeout(() => resolve([]), 1000)),
-      // ]);
-      // const toArrayPromise = cursor.toArray().catch(() => []);
-      // const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve([]), 1000));
-      // const docs = await Promise.race([toArrayPromise, timeoutPromise]);
+      // 6) Garde-fou: répond en ≤ 1s même si Mongo rame
+      const docs = await Promise.race([
+        cursor.toArray().catch(() => []),
+        new Promise((resolve) => setTimeout(() => resolve([]), 1000)),
+      ]);
 
       return res.status(200).json(docs.map(mapFileDoc));
     } catch (err) {
